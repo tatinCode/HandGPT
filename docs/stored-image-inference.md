@@ -2,7 +2,7 @@
 
 This workflow prepares a **separate** ExecuTorch source checkout, Python environment, model, and Cortex-M55 runtime on the development computer. It does not install into the learning tutorial environment, modify Viewfinder, create cloud resources, or program a board.
 
-**Current boundary:** these tools prepare host/model/runtime artifacts. They are not yet a complete CMSIS firmware project. Root-level `main.cpp` is an unvalidated reference runner, not a supported entry point for these generated assets. Board execution and camera/inference coexistence are separate acceptance steps.
+**Current boundary:** host/model/runtime artifacts and a separate [CMSIS smoke firmware target](../firmware/smoke/README.md) are available. Root-level `main.cpp` remains an unvalidated reference runner, not the supported entry point for these generated assets. Physical-board execution and camera/inference coexistence are separate acceptance steps.
 
 ## Compatibility choices
 
@@ -126,7 +126,7 @@ The tests check environment isolation, bounded build parallelism, source-revisio
 ## Before firmware integration
 
 1. Require successful host setup, smoke export, and Cortex-M55 runtime build. Save the delegation report and manifests.
-2. Create a separate stored-input CMSIS firmware target, leaving the working Viewfinder target intact.
+2. Build the separate stored-input CMSIS target with `python3 -m tools.smoke_firmware --jobs 1`, leaving the working Viewfinder target intact. See its [build and hardware-acceptance instructions](../firmware/smoke/README.md).
 3. Use one compatible Ethos-U driver, initialize the required NPU clocks/power/address mapping through verified E8 APIs, and provide real timing and bounded completion waits.
 4. Use matching input/output metadata and compare fixed-input device outputs against host/reference results, accounting for quantization differences.
 5. Review the linker map and NPU-accessible memory before allocating any pools. Viewfinder already reserves substantial SRAM; the legacy runner's roughly 7.6 MiB of pools cannot simply be added.

@@ -13,10 +13,13 @@ The repository currently contains:
 - [`main.cpp`](main.cpp): an ExecuTorch runner intended to execute an embedded MobileNetV2 model on a fixed test image, with Ethos-U85 initialization, completion polling, SEGGER RTT logging, fault diagnostics, and an LED heartbeat.
 - [`firmware/vendor/alif_viewfinder`](firmware/vendor/alif_viewfinder): a fork of Alif's camera/display example, configured for **DevKit-E8-HP + MT9M114**. The user has confirmed a working preview on the attached screen.
 - [`docs/camera-baseline.md`](docs/camera-baseline.md): the working hardware configuration, build/programming workflow, tool versions, and remaining verification checks.
-- [`tools/inference.py`](tools/inference.py): isolated, staged host setup, Ethos-U model export, and Cortex-M55 runtime builds. See [`docs/stored-image-inference.md`](docs/stored-image-inference.md); this is not yet integrated board firmware.
+- [`tools/inference.py`](tools/inference.py): isolated, staged host setup, Ethos-U model export, and Cortex-M55 runtime builds. See [`docs/stored-image-inference.md`](docs/stored-image-inference.md); camera integration remains separate.
+- [`firmware/smoke`](firmware/smoke/README.md): a separate E8-HP smoke-test target with numerical/NPU execution checks, bounded waits, and verified build-time memory/vector placement. Physical-board execution is still unverified.
 - [`HandGPT_PROJECT_PLAN.md`](HandGPT_PROJECT_PLAN.md): the original bring-up plan and initial handshape MVP milestones; consult the baseline document for the current camera status.
 
-**Camera-to-screen preview works; inference integration, a trained handshape model, fingerspelling, and whole-sign recognition are not implemented yet.** Successful on-board inference still needs to be verified; the existing runner performs ImageNet classification, not ASL recognition.
+**Camera-to-screen preview works; camera/inference integration, a trained handshape model, fingerspelling, and whole-sign recognition are not implemented yet.** Successful on-board inference still needs to be verified; the original reference runner targets ImageNet classification, not ASL recognition.
+
+Host-side checkpoints are verified: isolated ExecuTorch setup, U85 smoke-model export, Cortex-M55 runtime/driver packaging, and a clean standalone smoke-firmware build with memory/vector checks. **This is not evidence of inference on the physical E8 yet.**
 
 ## Hardware and intended software stack
 
@@ -111,6 +114,12 @@ python3 tools/inference.py doctor
 ```
 
 Follow the staged [stored-image workflow](docs/stored-image-inference.md) rather than installing into the learning tutorial environment or changing the working camera firmware.
+
+Once the smoke model and runtime manifests exist, build the separate [smoke firmware](firmware/smoke/README.md) without flashing:
+
+```bash
+python3 -m tools.smoke_firmware --jobs 1
+```
 
 Integrate the runner with the matching Alif/CMSIS project and verified SDK/toolchain versions. Follow the bring-up sequence and reference examples in [`HandGPT_PROJECT_PLAN.md`](HandGPT_PROJECT_PLAN.md), then record reproducible build, flash, and output-reading instructions once validated.
 
