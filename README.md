@@ -13,6 +13,7 @@ The repository currently contains:
 - [`main.cpp`](main.cpp): an ExecuTorch runner intended to execute an embedded MobileNetV2 model on a fixed test image, with Ethos-U85 initialization, completion polling, SEGGER RTT logging, fault diagnostics, and an LED heartbeat.
 - [`firmware/vendor/alif_viewfinder`](firmware/vendor/alif_viewfinder): a fork of Alif's camera/display example, configured for **DevKit-E8-HP + MT9M114**. The user has confirmed a working preview on the attached screen.
 - [`docs/camera-baseline.md`](docs/camera-baseline.md): the working hardware configuration, build/programming workflow, tool versions, and remaining verification checks.
+- [`tools/inference.py`](tools/inference.py): isolated, staged host setup, Ethos-U model export, and Cortex-M55 runtime builds. See [`docs/stored-image-inference.md`](docs/stored-image-inference.md); this is not yet integrated board firmware.
 - [`HandGPT_PROJECT_PLAN.md`](HandGPT_PROJECT_PLAN.md): the original bring-up plan and initial handshape MVP milestones; consult the baseline document for the current camera status.
 
 **Camera-to-screen preview works; inference integration, a trained handshape model, fingerspelling, and whole-sign recognition are not implemented yet.** Successful on-board inference still needs to be verified; the existing runner performs ImageNet classification, not ASL recognition.
@@ -102,6 +103,14 @@ code firmware/vendor/alif_viewfinder
 The submodule URL uses SSH and requires GitHub SSH access. Select **DevKit-E8-HP / debug** and follow [`docs/camera-baseline.md`](docs/camera-baseline.md) to build and intentionally program the camera/display example. The pinned fork commit preserves the camera component selection and the active target.
 
 **The inference runner is not yet a standalone buildable project.** Root-level `main.cpp` references model/image headers under `assets/`, board support, ExecuTorch, the Ethos-U driver, and SEGGER RTT that are not included here. It has not been integrated into Viewfinder's CMSIS project or memory layout.
+
+For the separate pinned inference toolchain, start with:
+
+```bash
+python3 tools/inference.py doctor
+```
+
+Follow the staged [stored-image workflow](docs/stored-image-inference.md) rather than installing into the learning tutorial environment or changing the working camera firmware.
 
 Integrate the runner with the matching Alif/CMSIS project and verified SDK/toolchain versions. Follow the bring-up sequence and reference examples in [`HandGPT_PROJECT_PLAN.md`](HandGPT_PROJECT_PLAN.md), then record reproducible build, flash, and output-reading instructions once validated.
 
