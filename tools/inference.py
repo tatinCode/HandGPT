@@ -307,7 +307,32 @@ def runtime(args):
          "-DCMAKE_C_FLAGS=",
          "-DCMAKE_INSTALL_PREFIX=" + str(build),
          "-DCMSIS_PATH=" + str(cmsis), "-DETHOSU_TARGET_NPU_CONFIG=" + TARGET], env=env)
-    run(["cmake", "--build", driver, "--target", "install", "--parallel", args.jobs], env=env)
+    run([
+        "cmake", "--build", driver,
+        "--target", "ethosu_core_driver", 
+        "--parallel", args.jobs
+        ], env=env)
+
+    driver_source = (
+            SOURCE / "backends" / "arm" / "third-party" / "ethos-u-core-driver"
+            )
+    archive = driver / "libethosu_core_driver.a"
+    headers = [
+            driver_source / "include" / name
+            for name in ("ethosu_driver.h", "ethosu_types.h", "pmu_ethosu.h")
+            ]
+
+    #Validate everything before packaging
+    for path in [archive, *headers]:
+        if not path.is_file():
+            raise SetupError(f"Missing driver artifact: {path}")
+
+    (build / "lib").mkdir(parents=True, exist_ok=True)
+    (build / "include").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(archive, build / "lib" / archive.name)
+    for header in headers:
+        shutil.copy2(header, build / "include" / header.name)
+
     libraries = sorted((build / "lib").glob("*.a"))
     required = {"libexecutorch.a", "libexecutorch_core.a", "libexecutorch_delegate_ethos_u.a", "libethosu_core_driver.a"}
     missing = required - {lib.name for lib in libraries}
