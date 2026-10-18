@@ -2,6 +2,16 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "HandGPT: Build camera coexistence (no device access)",
+            "detail": "Build only. CPU preview plus the STORED-image self-test; camera capture pauses during inference. Not live classification.",
+            "type": "process",
+            "command": "python3",
+            "args": ["-m", "tools.camera_inference_firmware", "--layout", "hp-only-large", "--image", "${input:storedImagePath}", "--jobs", "1"],
+            "options": {"cwd": "${workspaceFolder}"},
+            "problemMatcher": [],
+            "presentation": {"reveal": "always", "panel": "dedicated"}
+        },
+        {
             "label": "HandGPT: Build stored image (HP-only layout, no device access)",
             "detail": "Build only. Reclaims default HE/user MRAM in the generated layout; does not program the board.",
             "type": "process",
