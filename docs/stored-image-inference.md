@@ -149,6 +149,8 @@ Use a dedicated JSON report path, not an input artifact. Once CLI arguments are 
 
 ## Tests
 
+The standalone stored-image hardware milestone is now accepted from [user-supplied reset/cold-boot logs](stored-image-hardware-acceptance.md). The next [camera/display coexistence gate](camera-inference-audit.md) has a separate build and must obtain its own hardware acceptance; preflight success never confers that result.
+
 Lightweight safety/header tests do not require PyTorch or a board:
 
 ```bash

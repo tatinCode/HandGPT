@@ -1,6 +1,6 @@
 # E8-HP stored-image MobileNetV2 target
 
-**Offline build/package milestone.** This separate CMSIS project runs a preprocessed stored image through the ImageNet MobileNetV2 export on U85. It is not an ASL classifier, does not initialise the camera/display, and has not yet run on the board. It leaves the smoke and Viewfinder projects unchanged and reuses the tested smoke UART/NPU/cache platform source without editing it.
+**Standalone hardware milestone accepted.** This separate CMSIS project runs a preprocessed stored image through the ImageNet MobileNetV2 export on U85. User-supplied UART logs show PASS on reset and a cold-boot repeat: 19 ms, all 1,000 logits checked, one completed NPU job, no errors/timeouts. See the [acceptance record](../../docs/stored-image-hardware-acceptance.md). It is not an ASL classifier and does not initialise the camera/display. It leaves the smoke and Viewfinder projects unchanged and reuses the tested smoke UART/NPU/cache platform source without editing it.
 
 ## Deliberately opt in to the larger layout
 
@@ -67,7 +67,7 @@ Reservations are explicit and bounded:
 | Newlib heap | 131,072 | DTCM |
 | Stack | 32,768 | DTCM |
 
-The backend requests 1,505,280 scratch bytes from the **temporary allocator**, not the planned arena. Temporary/method allocations are padded/aligned to at least 32-byte cache lines; this prevents NPU cache invalidation touching a neighbouring CPU temporary allocation. Runtime logs report both allocator high-water marks, retaining the maximum across resets of the temporary allocator. Neither these high-water marks nor MobileNet's execution time have been observed on hardware yet.
+The backend requests 1,505,280 scratch bytes from the **temporary allocator**, not the planned arena. Temporary/method allocations are padded/aligned to at least 32-byte cache lines; this prevents NPU cache invalidation touching a neighbouring CPU temporary allocation. Runtime logs report both allocator high-water marks, retaining the maximum across resets of the temporary allocator. The user observed temporary high-water **1,505,280 bytes**, method high-water **864 bytes**, and method execution **19 ms** on both reported hardware runs. These do not justify automatically shrinking reservations for another target.
 
 The input is copied from MRAM before inference and checked unchanged afterward. `g_image_output[1000]` retains the board logits for debugger inspection if a debugger becomes available. The shared platform record is still named **`g_smoke_status`**, with its existing 60-byte ABI, but belongs to this new image when it is running; its address is in the stored-image manifest. Do not use a symbol/address from an older ELF to decode it.
 
@@ -112,7 +112,7 @@ The only boot entries are **DEVICE + USER_APP**, with USER_APP selecting **M55_H
 
 ## Deliberate programming — separate, confirmation-gated command
 
-[`tools/program_stored_image.py`](../../tools/program_stored_image.py) is the separate stored-image programmer. The preparation helper remains host-only. **The programmer was tested with mocked writes and a real review-only run; it has not been used to flash this target.** Implementing the programmer is not authorization for the assistant to write the board.
+[`tools/program_stored_image.py`](../../tools/program_stored_image.py) is the separate stored-image programmer. The preparation helper remains host-only. The implementation was tested with mocked writes and a real review-only run; the user subsequently supplied the standalone board PASS/cold-boot logs recorded above. **The assistant has not flashed the board.** Neither implementation nor prior acceptance authorizes an automatic future write.
 
 Do not copy this binary into the old smoke/Viewfinder task, patch the smoke programmer's guards, or run a manual erase to make it fit. There is no new VS Code writing task: run the explicit command in an interactive terminal. A write replaces the on-board smoke/camera application and much of the default HE range. Source/build/package fallbacks remain separate; restoring one requires programming its matching image **and** boot table. The reserved first 4 KiB and system-package area are outside the checked write ranges.
 

@@ -14,13 +14,16 @@ The repository currently contains:
 - [`firmware/vendor/alif_viewfinder`](firmware/vendor/alif_viewfinder): a fork of Alif's camera/display example, configured for **DevKit-E8-HP + MT9M114**. The user has confirmed a working preview on the attached screen.
 - [`docs/camera-baseline.md`](docs/camera-baseline.md): the working hardware configuration, build/programming workflow, tool versions, and remaining verification checks.
 - [`tools/inference.py`](tools/inference.py): isolated, staged host setup, Ethos-U model export, and Cortex-M55 runtime builds. See [`docs/stored-image-inference.md`](docs/stored-image-inference.md); camera integration remains separate.
+- [`ml/asl`](ml/asl/README.md): host-only ASL dataset preparation, six-class MobileNetV2 baseline, camera-session auditing, seven-class presenter adaptation with learned OTHER, and image/rejection evaluation. The [first adaptation runs](docs/asl-presenter-adaptation.md) improve rejection but are not demo-ready. Training artifacts and dependencies are isolated under `.work/asl/`.
+- [Fine-tuning and screen-overlay status](docs/asl-finetune-and-overlay.md): recognition remains below demo requirements. The user confirmed the upright [TEST UI](firmware/camera_overlay/README.md); the first live build failed its numerical boot gate. A revised [experimental live-ASL package](firmware/asl_live/README.md), with an explicitly approved post-hoc self-test tolerance, awaits a deliberate user flash and hardware acceptance.
 - [`firmware/smoke`](firmware/smoke/README.md): a separate E8-HP arithmetic smoke target. User-supplied logs confirm numerical PASS, NPU job/IRQ evidence, and a cold-boot repeat on the board.
-- [`firmware/stored_image`](firmware/stored_image/README.md): a separate, clean-built MobileNetV2 stored-image target using the opt-in larger HP layout, with a prepared/reviewed HP-only boot package. Its model/reference/pool/vector/startup placement checks pass; programming and physical image inference are still outstanding.
+- [`firmware/stored_image`](firmware/stored_image/README.md): MobileNetV2 stored-image inference verified by user-supplied UART logs and a cold-boot repeat: **19 ms**, 1,000 logits checked, one completed U85 job, no errors/timeouts. See [hardware acceptance](docs/stored-image-hardware-acceptance.md).
+- [`firmware/camera_inference`](firmware/camera_inference/README.md): camera/display + stored-image coexistence target with user-captured, CRC-verified v3 frames and self-test PASS. A separate v4 [fast full-view export](docs/camera-frame-capture.md) candidate is built/prepared offline; it matches host PIL resizing and needs its own hardware validation. See the [presenter demo milestones](docs/presenter-demo-plan.md).
 - [`HandGPT_PROJECT_PLAN.md`](HandGPT_PROJECT_PLAN.md): the original bring-up plan and initial handshape MVP milestones; consult the baseline document for the current camera status.
 
-**Camera-to-screen preview and standalone U85 arithmetic inference work; camera/inference integration, a trained handshape model, fingerspelling, and whole-sign recognition are not implemented yet.** Stored-image classification is built but has not run on the board; it targets ImageNet, not ASL recognition.
+**Camera-to-screen preview, v3 frame capture and standalone U85 arithmetic/stored-image inference work.** Complete combined cold-boot acceptance and camera-pixel classification remain outstanding. A [six-class ASL host baseline](docs/asl-local-baseline.md) is trained and dataset-tested; initial E8 images reveal L/Y confusion and unsupported-sign false letters. Presenter-specific adaptation and learned negatives are next, not claims of reliable camera accuracy. The firmware's current classifier still targets ImageNet. Fingerspelling and whole-sign recognition are future work.
 
-Host-side checkpoints include isolated ExecuTorch setup, U85 model export, Cortex-M55 runtime/driver packaging, and clean standalone smoke/stored-image firmware builds with memory/vector checks. **The stored-image build is not evidence of image classification on the physical E8 yet.**
+Host-side checkpoints include isolated ExecuTorch setup, U85 model export, Cortex-M55 runtime/driver packaging, and clean smoke/stored-image/coexistence firmware builds with memory/vector checks. User-supplied logs additionally verify standalone stored-image inference and continued preview after the coexistence self-test; **the latest v4 fast export still needs hardware validation.**
 
 ## Hardware and intended software stack
 
@@ -128,7 +131,15 @@ For the separate [stored-image target](firmware/stored_image/README.md), after a
 python3 -m tools.stored_image_firmware --layout hp-only-large --image ml/reference/images/cat.jpg --jobs 1
 ```
 
-This command is build-only. The larger layout reclaims default HE/user MRAM. The user has confirmed this board is HP-only, and the [host-only package preparation/review](firmware/stored_image/README.md#prepare-and-review-without-programming) is complete. The separate [stored-image programmer](firmware/stored_image/README.md#deliberate-programming--separate-confirmation-gated-command) defaults to review only; writing requires explicit `--write`, a terminal, and typed confirmation. It has not been used to flash this target; do not use the smoke/Viewfinder programming task for it.
+This command is build-only. The larger layout reclaims default HE/user MRAM. The user has confirmed this board is HP-only, and the [host-only package preparation/review](firmware/stored_image/README.md#prepare-and-review-without-programming) is complete. The separate [stored-image programmer](firmware/stored_image/README.md#deliberate-programming--separate-confirmation-gated-command) defaults to review only; writing requires explicit `--write`, a terminal, and typed confirmation. User-supplied logs now establish standalone stored-image hardware acceptance; do not use the smoke/Viewfinder programming task for that target.
+
+For the first [camera/display coexistence gate](firmware/camera_inference/README.md), after the accepted stored-image build exists:
+
+```bash
+python3 -m tools.camera_inference_firmware --layout hp-only-large --image ml/reference/images/cat.jpg --jobs 1
+```
+
+This also builds only. It keeps inference pools in SRAM0 and camera/display buffers in SRAM1, omitting the large graphics heap. Camera capture pauses during the **stored-image** test; live camera classification is a later gate. A separate [camera-target package/review helper and guarded programmer](firmware/camera_inference/README.md#prepare-and-review-without-programming) are now implemented. Review is the default; writing requires a deliberate user-triggered command and target-specific terminal confirmation. Existing programmers must not be repurposed for it. Combined hardware acceptance remains outstanding.
 
 Integrate the runner with the matching Alif/CMSIS project and verified SDK/toolchain versions. Follow the bring-up sequence and reference examples in [`HandGPT_PROJECT_PLAN.md`](HandGPT_PROJECT_PLAN.md), then record reproducible build, flash, and output-reading instructions once validated.
 
@@ -136,4 +147,4 @@ Do not assume the Blinky memory layout can accommodate inference. Review SRAM pl
 
 ## Immediate goal
 
-**Preserve the working preview, verify known-good stored-image inference, then prove both can coexist in one firmware image.** Five live handshape predictions come next, followed by reliable fingerspelling. Whole-sign recognition is a later, separately trained capability.
+**Validate faster capture, collect presenter development data, adapt the model with learned negatives, then display live letters or `--` on the board.** Preserve the working preview, stored-image self-test and measured memory reservations throughout. Whole-sign recognition is a later, separately trained capability.
