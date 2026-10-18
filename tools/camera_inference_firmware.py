@@ -18,11 +18,14 @@ from tools import stored_image_firmware as image
 
 
 ROOT = common.ROOT
-WORKSPACE = common.WORK / "camera-inference-firmware"
+# Do not overwrite the working v3 full-resolution build or its package pointer.
+WORKSPACE = common.WORK / "camera-inference-fast-firmware"
 APPLICATION = ROOT / "firmware/camera_inference"
 NAME = "camera-inference"
 SRAM1_BASE, SRAM1_END = 0x02400000, 0x02800000
 CAMERA_BYTES, LCD_BYTES = 480 * 480 * 3, 2 * 480 * 800 * 2
+CAPTURE = dict(protocol=4, wire_version=2, width=128, height=128, payload_bytes=49152,
+               source_width=480, source_height=480, crop="none", resize="PIL_bilinear_22bit")
 PERIPHERAL_IRQS = {333: "CDC_SCANLINE0_IRQHandler", 343: "DSI_IRQHandler", 344: "CSI_IRQHandler",
                    345: "CAM_IRQHandler", 367: "ISP_IRQHandler", 368: "ISP_MI_IRQHandler"}
 CAMERA_COMPONENTS = (
@@ -46,8 +49,12 @@ def platform_port(text):
     # Private generated copy only. Existing smoke/stored-image ports and hashes
     # are unchanged. The single shared UART/tick/IRQ/cache/syscall owner remains.
     text = smoke.replace_once(text, '#include "smoke_platform.h"', '#include "smoke_platform.h"\n#include "preview.h"')
-    return smoke.replace_once(text, "    se_services_port_init();",
+    text = smoke.replace_once(text, "    se_services_port_init();",
                               "    se_services_port_init();\n    if (!preview_power_init()) { return false; }")
+    # Boot-triggered export needs no host-to-board UART input. The exact
+    # cause of the earlier stalls remains unproven. Use the unchanged smoke
+    # UART initialization and callback; enable no RX and parse no requests.
+    return text
 
 
 def configure(pack, runtime):
@@ -72,7 +79,7 @@ def configure(pack, runtime):
     assets.mkdir(exist_ok=True)
     for name in ("reference_model_pte.h", "reference_input.h", "reference_logits.h", "image_config.h"):
         shutil.copy2(image.WORKSPACE / "assets" / name, assets / name)
-    sources = [APPLICATION / "src" / name for name in ("main.cpp", "power.cpp", "preview.cpp")]
+    sources = [APPLICATION / "src" / name for name in ("main.cpp", "power.cpp", "preview.cpp", "frame_export.cpp")]
     sources += [ROOT / "firmware/stored_image/src/model_runner.cpp", port]
     sources += [smoke.VENDOR / "viewfinder/camera" / name for name in ("isp_calibration.c", "isp_calibration_mt9m114.c")]
     relative = lambda path: os.path.relpath(path, WORKSPACE)
@@ -115,6 +122,11 @@ def configure(pack, runtime):
 
 def verify_layout(symbols, binary, model_bytes):
     result = image.verify_layout(symbols, binary, model_bytes)
+    kernel = symbols.get("handgpt::kResizeKernels")
+    if (not kernel or kernel[1] != 128 * 36 or kernel[2] not in ("V", "R", "r") or
+            not image.PROFILE.mram_base <= kernel[0] < kernel[0] + kernel[1] <= image.PROFILE.mram_base + len(binary)):
+        raise common.SetupError("Fast capture resize coefficients must be read-only in MRAM")
+    result["camera_resize_kernels"] = {"address": hex(kernel[0]), "bytes": kernel[1]}
     spans = []
     for name, size in (("g_preview_rgb", CAMERA_BYTES), ("g_preview_lcd", LCD_BYTES)):
         symbol = symbols.get(name)
@@ -228,7 +240,8 @@ def build(args):
                              for path in sorted((WORKSPACE / folder).rglob("*")) if path.is_file()},
         "project_sha256": {name: common.sha256(WORKSPACE / name) for name in (NAME + ".csolution.yml", NAME + ".cproject.yml", "cdefault.yml")},
         "hardware_verified": False, "programming_authorized": False, "camera_classification_implemented": False,
-        "scope": "CPU preview; camera paused during stored-image self-test; display scanout remains active; no GPU, live camera inference, or deep sleep",
+        "capture": CAPTURE,
+        "scope": "CPU preview; camera paused during stored-image self-test and boot-triggered CRC32 full-view 128x128 PIL-bilinear frame export; display scanout remains active; no GPU, live camera inference, deep sleep, or host-to-board UART input",
     }
     reports.write_report(WORKSPACE / "manifest.json", manifest)
     print(json.dumps(manifest, indent=2))

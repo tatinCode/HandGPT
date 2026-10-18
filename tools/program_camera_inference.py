@@ -24,6 +24,7 @@ def print_review(receipt, stage, port):
     print(f"Target: camera-inference / DevKit-E8-HP / M55_HP ONLY; port: {port}")
     print(f"Image: {prepared.IMAGE_NAME}, {receipt['binary_bytes']} bytes, MRAM [{layout['image_address']}, {layout['image_end']})")
     print(f"SHA-256: {receipt['binary_sha256']}")
+    print("Capture v4: full-view 128x128 RGB888P; 49,152-byte payload (not the v3 full-resolution image).")
     print(f"DEVICE/certificates/ATOC: [{layout['package_address']}, {layout['package_end']}), {layout['package_bytes']} bytes")
     print(f"Receipt: {stage / 'receipt.json'}")
     print("WARNING: Writing replaces the current HP application (including standalone stored-image inference).")

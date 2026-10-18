@@ -16,6 +16,7 @@ class CameraInferenceFirmwareTests(unittest.TestCase):
         symbols, binary = stored_tests.StoredImageFirmwareTests().fixture()
         symbols["g_preview_rgb"] = (camera.SRAM1_BASE, camera.CAMERA_BYTES, "B")
         symbols["g_preview_lcd"] = (camera.SRAM1_BASE + camera.CAMERA_BYTES, camera.LCD_BYTES, "B")
+        symbols["handgpt::kResizeKernels"] = (camera.image.PROFILE.mram_base + 0x2800, 128 * 36, "V")
         for index, (irq, name) in enumerate(camera.PERIPHERAL_IRQS.items()):
             address = camera.image.PROFILE.mram_base + 0x2000 + index * 32
             symbols[name] = (address, 32, "T")
@@ -33,6 +34,16 @@ class CameraInferenceFirmwareTests(unittest.TestCase):
         symbols, binary = self.fixture()
         symbols["g_preview_rgb"] = (0x02000000, camera.CAMERA_BYTES, "B")
         with self.assertRaises(inference.SetupError): camera.verify_layout(symbols, binary, 3835520)
+
+    def test_resize_coefficients_cannot_be_missing_in_ram_or_wrong_size(self):
+        for value in (None, (0x02000000, 4608, "V"), (0x80003800, 4604, "V"), (0x80003800, 4608, "D")):
+            symbols, binary = self.fixture()
+            if value is None:
+                del symbols["handgpt::kResizeKernels"]
+            else:
+                symbols["handgpt::kResizeKernels"] = value
+            with self.subTest(value=value), self.assertRaisesRegex(inference.SetupError, "read-only in MRAM"):
+                camera.verify_layout(symbols, binary, 3835520)
 
     def test_overlapping_or_oversized_video_buffers_fail(self):
         for address, size in ((camera.SRAM1_BASE + 32, camera.LCD_BYTES), (camera.SRAM1_END - 32, camera.LCD_BYTES),
@@ -70,7 +81,7 @@ class CameraInferenceFirmwareTests(unittest.TestCase):
                 camera.verify_layout(symbols, binary, 3835520)
 
     def test_power_hook_is_private_and_runs_before_uart_and_tick_initialization(self):
-        text = '#include "smoke_platform.h"\n    se_services_port_init();\nSysTick_Config();\nuart->Initialize();'
+        text = (inference.ROOT / "firmware/smoke/src/platform.cpp").read_text()
         result = camera.platform_port(text)
         self.assertLess(result.index("preview_power_init"), result.index("SysTick_Config"))
         self.assertLess(result.index("preview_power_init"), result.index("uart->Initialize"))
@@ -120,10 +131,14 @@ class CameraInferenceFirmwareTests(unittest.TestCase):
             subprocess.run(compiler + includes + [str(root / "main.o"), str(inference.ROOT / "tests/native/camera_coexist_main_test.cpp"),
                             "-o", str(output)], check=True, capture_output=True, text=True)
             for scenario in ("success", "board-error", "preview-init-error", "pre-frame-error", "npu-error", "image-error",
-                             "no-display-events", "post-frame-error", "uart-error"):
+                              "no-display-events", "post-frame-error", "uart-error", "capture-error", "capture-timeout", "settle-error"):
                 with self.subTest(scenario=scenario):
                     run = subprocess.run([str(output), scenario], check=True, capture_output=True, text=True, timeout=10)
-                    self.assertEqual("COEXIST SELFTEST PASS" in run.stdout, scenario == "success")
+                    self.assertEqual("COEXIST SELFTEST PASS" in run.stdout,
+                                     scenario in ("success", "capture-error", "capture-timeout", "settle-error"))
+                    self.assertEqual("CAPTURE DONE v=4" in run.stdout, scenario == "success")
+                    self.assertEqual("CAPTURE EXPORT LOST" in run.stdout,
+                                     scenario in ("capture-error", "capture-timeout"))
 
     @unittest.skipUnless(shutil.which("c++"), "host C++ compiler unavailable")
     def test_native_run_profile_preserves_resources_and_powers_both_sram_banks_and_hp_npu(self):

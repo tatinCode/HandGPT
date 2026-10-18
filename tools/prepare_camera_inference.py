@@ -21,7 +21,7 @@ from tools import program_smoke as shared
 
 ROOT = common.ROOT
 FIRMWARE = firmware.WORKSPACE
-PROGRAM = common.WORK / "camera-inference-programming"
+PROGRAM = common.WORK / "camera-inference-fast-programming"
 PROFILE = firmware.image.PROFILE
 TARGET = "camera-inference.debug+DevKit-E8-HP"
 IMAGE_NAME = "handgpt-camera-inference.bin"
@@ -36,7 +36,7 @@ def check_build(image):
     manifest = FIRMWARE / "manifest.json"
     meta = reports.read_json(manifest)
     if (meta.get("target") != TARGET or meta.get("layout_profile") != PROFILE.report()
-            or meta.get("executorch_revision") != common.REVISION
+            or meta.get("executorch_revision") != common.REVISION or meta.get("capture") != firmware.CAPTURE
             or any(meta.get(name) is not False for name in ("hardware_verified", "programming_authorized", "camera_classification_implemented"))):
         raise common.SetupError("Expected the separate hp-only-large camera coexistence build; rebuild first.")
     expected = FIRMWARE / "out/camera-inference/DevKit-E8-HP/debug/camera-inference.bin"
@@ -51,7 +51,7 @@ def check_build(image):
         if common.sha256(path) != digest:
             raise common.SetupError(f"Build artifact/helper changed: {path.name}; rebuild first.")
     identities(meta["tool_sha256"], TOOLS, ROOT / "tools")
-    sources = [ROOT / "firmware/camera_inference/src" / name for name in ("main.cpp", "power.cpp", "preview.cpp")]
+    sources = [ROOT / "firmware/camera_inference/src" / name for name in ("main.cpp", "power.cpp", "preview.cpp", "frame_export.cpp")]
     sources += [ROOT / "firmware/stored_image/src/model_runner.cpp", ROOT / "firmware/smoke/src/platform.cpp",
                 FIRMWARE / "generated/platform.cpp"]
     sources += [firmware.smoke.VENDOR / "viewfinder/camera" / name for name in (
@@ -234,7 +234,7 @@ def prepare(setools_root, image, hp_only_board=False):
     (PROGRAM / "latest.json").unlink(missing_ok=True)
     info = check_build(image)
     root = Path(setools_root).expanduser().resolve(strict=True)
-    for work in (PROGRAM, accepted.PROGRAM, shared.PROGRAM):
+    for work in (PROGRAM, common.WORK / "camera-inference-programming", accepted.PROGRAM, shared.PROGRAM):
         if root.is_relative_to(work.resolve()) or work.resolve().is_relative_to(root):
             raise common.SetupError("Use the installed SETOOLS directory, not a prepared toolkit or its parent.")
     version, device = shared.validate_toolkit(root)
@@ -317,6 +317,7 @@ def print_review(receipt, stage):
     print(f"PREPARED/REVIEWED ONLY: {stage}")
     print(f"HP-only image: {IMAGE_NAME}, {receipt['binary_bytes']} bytes at {layout['image_address']}")
     print(f"Binary SHA-256: {receipt['binary_sha256']}")
+    print("Capture v4: full-view 480 -> 128 PIL-bilinear RGB888P; 49,152-byte payload. Not a crop.")
     print(f"DEVICE/certificates/ATOC: {layout['package_bytes']} bytes at {layout['package_address']} through {layout['package_end']} (exclusive)")
     print(f"Boot entries: DEVICE + USER_APP (M55_HP only); receipt: {stage / 'receipt.json'}")
     print("Preview + STORED-image self-test only; NOT camera classification. Hardware validation remains required.")

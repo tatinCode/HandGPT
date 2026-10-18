@@ -139,7 +139,7 @@ class CameraBuildValidationTests(unittest.TestCase):
         self.write(self.binary.with_suffix(".elf"), b"test elf")
         self.commands = self.binary.parent / "compile_commands.json"
         self.write(self.commands, b"[]")
-        paths = [self.root / "firmware/camera_inference/src" / name for name in ("main.cpp", "power.cpp", "preview.cpp")]
+        paths = [self.root / "firmware/camera_inference/src" / name for name in ("main.cpp", "power.cpp", "preview.cpp", "frame_export.cpp")]
         paths += [self.root / "firmware/stored_image/src/model_runner.cpp", self.root / "firmware/smoke/src/platform.cpp",
                   self.work / "generated/platform.cpp"]
         paths += [self.vendor / "viewfinder/camera" / name for name in ("isp_calibration.c", "isp_calibration_mt9m114.c", "isp_calibration.h")]
@@ -166,6 +166,7 @@ class CameraBuildValidationTests(unittest.TestCase):
         self.meta = {
             "target": prepare.TARGET, "layout_profile": prepare.PROFILE.report(), "executorch_revision": inference.REVISION,
             "hardware_verified": False, "programming_authorized": False, "camera_classification_implemented": False,
+            "capture": prepare.firmware.CAPTURE,
             "bin": str(self.binary.relative_to(self.root)), "elf": str(self.binary.with_suffix(".elf").relative_to(self.root)),
             "bin_sha256": inference.sha256(self.binary), "elf_sha256": inference.sha256(self.binary.with_suffix(".elf")),
             "generator_sha256": inference.sha256(Path(prepare.firmware.__file__)), "compile_commands_sha256": inference.sha256(self.commands),
@@ -211,7 +212,8 @@ class CameraBuildValidationTests(unittest.TestCase):
 
     def test_other_targets_profiles_and_hardware_claims_are_rejected(self):
         for field, value in (("target", "stored-image.debug+DevKit-E8-HP"), ("layout_profile", {}),
-                             ("hardware_verified", True), ("programming_authorized", True), ("camera_classification_implemented", True)):
+                             ("hardware_verified", True), ("programming_authorized", True), ("camera_classification_implemented", True),
+                             ("capture", {"protocol": 3})):
             original = self.meta[field]
             self.meta[field] = value
             self.save()

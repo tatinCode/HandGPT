@@ -1,4 +1,5 @@
 #include "preview.h"
+#include "frame_export.h"
 #include "smoke_platform.h"
 #include "image_config.h"
 
@@ -40,14 +41,30 @@ int main() {
                 static_cast<unsigned long>(g_smoke_status.npu_jobs_started), static_cast<unsigned long>(g_smoke_status.npu_jobs_finished),
                 static_cast<unsigned long>(g_smoke_status.checked_values));
     if (g_smoke_status.uart_timeouts) { fail(207); }
+    // One-way transport: the host listens before the user resets the board.
+    // Earlier capture attempts stalled; their precise fault is not established.
+    // Removing RX avoids that dependency without changing the proven TX port.
+    std::printf("CAPTURE READY v=4; full-view PIL-bilinear 128x128 export; settle_ms=2000; send nothing\n");
+    const uint32_t settle = smoke_millis();
+    do {
+        if (!preview_frame()) { fail(208); }
+    } while (static_cast<uint32_t>(smoke_millis() - settle) < 2000);
+    // No new camera DMA during export. The LCD scans the final settled frame.
+    const bool exported = camera_export_frame();
+    // Export/TX failure must not kill preview or erase measured timeout counts.
+    // Clear newlib's stream error so later best-effort diagnostics can recover.
+    std::clearerr(stdout);
+    std::printf(exported ? "CAPTURE DONE v=4; preview resuming\n" :
+                          "CAPTURE EXPORT LOST v=4; preview resuming; reset to retry\n");
     uint32_t last = smoke_millis();
     while (true) {
         if (!preview_frame()) { fail(208); }
         if (smoke_millis() - last >= 1000) {
             last = smoke_millis();
-            std::printf("PREVIEW frames=%lu scanlines=%lu (stored-image self-test passed; not live classification)\n",
+            std::clearerr(stdout);
+            std::printf("PREVIEW frames=%lu scanlines=%lu (boot export finished; not live classification)\n",
                         static_cast<unsigned long>(preview_frames()), static_cast<unsigned long>(preview_scanlines()));
-            if (g_smoke_status.uart_timeouts) { fail(207); }
+            std::printf("CAPTURE IDLE v=4; press the board reset for another export\n");
         }
     }
 }
