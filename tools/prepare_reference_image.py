@@ -75,6 +75,8 @@ def prepare(image_path, output):
             "shape": [1, 3, 224, 224], "dtype": "float32", "raw_endianness": "little",
         },
         "input_sha256": hashlib.sha256(raw).hexdigest(),
+        "input_npy_sha256": hashlib.sha256((output / "input.npy").read_bytes()).hexdigest(),
+        "host_logits_sha256": hashlib.sha256((output / "host_logits.npy").read_bytes()).hexdigest(),
         "input_bytes": len(raw),
         "host_top5": [
             {"index": int(index), "label": weights.meta["categories"][int(index)], "logit": float(value)}

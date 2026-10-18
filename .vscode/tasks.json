@@ -2,6 +2,16 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "HandGPT: Build stored image (HP-only layout, no device access)",
+            "detail": "Build only. Reclaims default HE/user MRAM in the generated layout; does not program the board.",
+            "type": "process",
+            "command": "python3",
+            "args": ["-m", "tools.stored_image_firmware", "--layout", "hp-only-large", "--image", "${input:storedImagePath}", "--jobs", "1"],
+            "options": {"cwd": "${workspaceFolder}"},
+            "problemMatcher": [],
+            "presentation": {"reveal": "always", "panel": "dedicated"}
+        },
+        {
             "label": "HandGPT: Build smoke (no device access)",
             "type": "process",
             "command": "python3",
@@ -39,6 +49,7 @@
         }
     ],
     "inputs": [
+        {"id": "storedImagePath", "type": "promptString", "description": "Original image used by the MobileNet export", "default": "ml/reference/images/cat.jpg"},
         {"id": "smokeSetoolsRoot", "type": "promptString", "description": "Installed SETOOLS 1.112.00 directory (not the generated workspace)", "default": "~/alif/app-release-exec-linux"},
         {"id": "smokePort", "type": "promptString", "description": "Explicit SETOOLS serial port; close serial monitors before programming", "default": "/dev/ttyACM0"}
     ]

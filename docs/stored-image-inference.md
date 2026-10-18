@@ -71,7 +71,7 @@ The deterministic model computes `output = input + input` for a float32 tensor s
 - `smoke_ethosu85_256.pte`
 - `reference_model_pte.h` (16-byte-aligned constant model array)
 - `intermediates/delegation_info.txt` and compiler artifacts
-- `program_metadata.json` with validated input/output shape, dtype, layout, delegate IDs, remaining CPU operators, and planned arena sizes
+- `program_metadata.json` with validated input/output shape, dtype, layout, delegate IDs, remaining CPU operators, planned arena sizes, and decoded per-delegate scratch requirements
 - `manifest.json` with target, model size, hash, and `hardware_verified: false`
 
 The helper deserializes the actual `.pte` and rejects wrong input/output contracts, unexpected input layout, or a forward method without an `EthosUBackend` delegate. Inspect the delegation report as well: quantize/dequantize or other operations may remain on the CPU. Generating a `.pte` alone does not establish NPU execution or numerical correctness on hardware. On an export/runtime retry, the previous success manifest is invalidated before rebuilding, so a failed stage cannot retain a stale success manifest.
@@ -107,11 +107,45 @@ This downloads torchvision's explicit `MobileNet_V2_Weights.IMAGENET1K_V2` weigh
 - `input.npy`: float32 `[1, 3, 224, 224]`, used by model export.
 - `input.f32`: little-endian float32 NCHW data for device comparison.
 - `reference_input.h`: a constant float array preserving normalized fractions.
-- `host_logits.npy` and `reference.json`: host outputs/top-5 labels, image/input hashes, weight identifier, and the exact preprocessing contract.
+- `host_logits.npy` and `reference.json`: host outputs/top-5 labels, image/input/logit hashes, weight identifier, and the exact preprocessing contract. New exports bind `reference.json` to the model manifest via `reference_sha256`.
 
 The model uses the same explicit weights during calibration and reference inference. Preprocessing is EXIF orientation correction → RGB → bilinear short-edge resize to 256 → centered 224 crop → division by 255 → ImageNet normalization → NCHW float32.
 
 **Do not cast normalized floats directly to int8.** That truncates useful fractional information; it is not a substitute for quantization using a defined scale and zero point. The legacy root runner currently does such an int8-to-float conversion and must be revised or replaced before it can use these assets. `reference_input.h` deliberately uses a different symbol/type to prevent accidental substitution.
+
+### 7. Fail-closed memory preflight (host only)
+
+Run from the HandGPT root with the **original image used by the export**. The checker uses the pinned HandGPT Python/ExecuTorch/FlatBuffers tools to freshly deserialize the `.pte`; it does not trust a caller's scratch estimate or an unrelated Vela `.npz`. It never opens a serial port, programs the board, downloads dependencies, changes the linker layout, or re-exports the model.
+
+```bash
+python3 -m tools.memory_preflight .work/inference/models/mv2 \
+  --image ml/reference/images/cat.jpg \
+  --output .work/inference/preflight/mv2-current.json \
+  --scratch-bytes 1572864 --temporary-overhead-bytes 65536 \
+  --arena-bytes 752640 --other-sram-bytes 0 --sram-bytes 4194304 \
+  --firmware-mram-bytes 262144 --other-mram-bytes 0 --mram-bytes 2097152 \
+  --method-pool-bytes 262144 --other-dtcm-bytes 16384 \
+  --heap-bytes 131072 --stack-bytes 32768 --dtcm-bytes 1048576
+```
+
+These CPU/firmware/overhead reservations are **explicit planning estimates**, not measured MobileNet requirements. Adjusting estimates is not permission to enlarge the HP region. `other-dtcm-bytes` must include platform globals, initialised data, the SDK application heap, and any other DTCM allocations not covered by the named pools. `other-mram-bytes` and `other-sram-bytes` cover additional consumers such as camera/display buffers when planning future coexistence.
+
+The **default** layout is fixed at HP MRAM base `0x80200000` / 2 MiB, SRAM0 base `0x02000000` / 4 MiB, and DTCM base `0x20000000` / 1 MiB. Capacities exceeding the selected profile are rejected, not treated as an arbitrary new memory map. The separately audited `--layout hp-only-large` profile provides `[0x80001000, 0x80500000)` for a standalone HP image and reserves the final 512 KiB tail. It reclaims default HE/user MRAM and **does not authorize programming**. The current profile remains the default.
+
+Checks include:
+
+- Manifest model/target/revision/memory mode, model byte count, and model/metadata hashes.
+- Fresh PTE method contracts and delegation compared against cached metadata; unknown methods/backends are rejected.
+- The pinned Vela payload's scratch size and bounded I/O descriptors. Planned arena bytes and delegate scratch are **different** allocations; actual scratch plus declared temporary overhead must fit the temporary pool.
+- Source-image hash, exact preprocessing/weight contract, raw/NPY input consistency, finite float32 input/logits, valid NPY shape/order/dtype, and host top-5 consistency.
+- Recorded hashes binding the export to `reference.json`, and the reference to `input.npy` and `host_logits.npy`. **Older exports missing these bindings remain blocked.** Re-export deliberately using step 6 (and re-export after modifying reference-generation/inspection code); do not invent hashes for old files to bypass the check. The current MobileNet artifacts are left unchanged by preflight.
+- Conservative aligned storage: MRAM holds the PTE, float input, golden logits, firmware reservation, and other MRAM consumers. SRAM reserves separate input/output buffers, the **entire declared** planned and temporary pools, and other consumers. DTCM reserves method pool, heap, stack, and other CPU consumers. Separate I/O reservations may overcount tensors already planned by ExecuTorch; they intentionally do not assume aliasing/reuse.
+
+The current MobileNet export is **3,835,520 bytes**, has **752,640 planned bytes**, and requests **1,505,280 scratch bytes**. The default-profile example remains blocked: the model alone exceeds 2 MiB; with the example's image/golden/code reservations MRAM requires 4,703,776 bytes. Even extending upwards from the existing HP base to the application-area end at `0x80580000` would provide only 3,670,016 bytes, insufficient for the model alone. Explicitly selecting the audited larger profile (and using `--mram-bytes 5238784`) accommodates this planning budget. The [separate stored-image builder](../firmware/stored_image/README.md) selects that profile explicitly and additionally checks the actual linked image.
+
+Exit code **0** means `fits: true` / `status: fits_declared_budgets`; **1** means blocked. `firmware_link_verified` and `hardware_verified` are always **false**. A fit is only a budget estimate: exact section placement, NPU reachability, real CPU/temporary allocation high-water marks, and numerical accuracy still require linker and board validation. Hashes establish artifact identity/consistency, not independent reproduction of calibration or host inference.
+
+Use a dedicated JSON report path, not an input artifact. Once CLI arguments are parsed and the output is validated, any previous report is invalidated before checks, and the new report is published atomically. Missing/malformed budget values and artifact failures publish `fits: false`, not a stale successful result. Always check the command's exit code; CLI usage/output-path errors can prevent report publication. The old `--runtime-bytes` option is intentionally replaced by explicit `--firmware-mram-bytes` and `--method-pool-bytes` reservations.
 
 ## Tests
 
@@ -134,6 +168,8 @@ The tests check environment isolation, bounded build parallelism, source-revisio
 7. Program the board only as an explicit next action, then record successful inference and actual NPU activity. Only afterward merge with the camera loop.
 
 ### E8 SDK findings to retain during firmware work
+
+See the [larger standalone HP MRAM audit](hp-mram-layout-audit.md) for the opt-in profile beginning at `0x80001000`, now implemented and clean-built by the [stored-image target](../firmware/stored_image/README.md), but **not programmed or hardware-verified**. The default preflight profile remains limited to 2 MiB. The audit includes the SETOOLS lower-address/NTOC restrictions, SDK MPU dependency, reserved boot tail, and conditions for reclaiming default HE space.
 
 The installed Ensemble 2.2.0 example at `Boards/DevKit-e8/Layers/M55_HP/ethos_setup.c` selects `NPU_HG_BASE` for U85 and supplies `IRQ366_Handler` with NVIC interrupt 366. This conflicts with the legacy root runner's assertion that the HG NPU has no IRQ to M55 HP. Hardware routing still needs verification, but do not copy that assertion or the two simultaneous polling paths as established facts.
 

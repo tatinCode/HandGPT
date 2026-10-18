@@ -225,6 +225,10 @@ def export_model(args):
         "metadata_sha256": sha256(metadata),
         "hardware_verified": False,
     }
+    if args.model == "mv2":
+        # Bind the reference input/golden outputs used during this export to the
+        # same manifest as the PTE. Preflight must not accept mixed references.
+        manifest["reference_sha256"] = sha256(output / "reference" / "reference.json")
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Exported {pte}. Inspect {delegation}; export success is NOT hardware validation.")
 

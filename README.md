@@ -14,12 +14,13 @@ The repository currently contains:
 - [`firmware/vendor/alif_viewfinder`](firmware/vendor/alif_viewfinder): a fork of Alif's camera/display example, configured for **DevKit-E8-HP + MT9M114**. The user has confirmed a working preview on the attached screen.
 - [`docs/camera-baseline.md`](docs/camera-baseline.md): the working hardware configuration, build/programming workflow, tool versions, and remaining verification checks.
 - [`tools/inference.py`](tools/inference.py): isolated, staged host setup, Ethos-U model export, and Cortex-M55 runtime builds. See [`docs/stored-image-inference.md`](docs/stored-image-inference.md); camera integration remains separate.
-- [`firmware/smoke`](firmware/smoke/README.md): a separate E8-HP smoke-test target with numerical/NPU execution checks, bounded waits, and verified build-time memory/vector placement. Physical-board execution is still unverified.
+- [`firmware/smoke`](firmware/smoke/README.md): a separate E8-HP arithmetic smoke target. User-supplied logs confirm numerical PASS, NPU job/IRQ evidence, and a cold-boot repeat on the board.
+- [`firmware/stored_image`](firmware/stored_image/README.md): a separate, clean-built MobileNetV2 stored-image target using the opt-in larger HP layout, with a prepared/reviewed HP-only boot package. Its model/reference/pool/vector/startup placement checks pass; programming and physical image inference are still outstanding.
 - [`HandGPT_PROJECT_PLAN.md`](HandGPT_PROJECT_PLAN.md): the original bring-up plan and initial handshape MVP milestones; consult the baseline document for the current camera status.
 
-**Camera-to-screen preview works; camera/inference integration, a trained handshape model, fingerspelling, and whole-sign recognition are not implemented yet.** Successful on-board inference still needs to be verified; the original reference runner targets ImageNet classification, not ASL recognition.
+**Camera-to-screen preview and standalone U85 arithmetic inference work; camera/inference integration, a trained handshape model, fingerspelling, and whole-sign recognition are not implemented yet.** Stored-image classification is built but has not run on the board; it targets ImageNet, not ASL recognition.
 
-Host-side checkpoints are verified: isolated ExecuTorch setup, U85 smoke-model export, Cortex-M55 runtime/driver packaging, and a clean standalone smoke-firmware build with memory/vector checks. **This is not evidence of inference on the physical E8 yet.**
+Host-side checkpoints include isolated ExecuTorch setup, U85 model export, Cortex-M55 runtime/driver packaging, and clean standalone smoke/stored-image firmware builds with memory/vector checks. **The stored-image build is not evidence of image classification on the physical E8 yet.**
 
 ## Hardware and intended software stack
 
@@ -105,7 +106,7 @@ code firmware/vendor/alif_viewfinder
 
 The submodule URL uses SSH and requires GitHub SSH access. Select **DevKit-E8-HP / debug** and follow [`docs/camera-baseline.md`](docs/camera-baseline.md) to build and intentionally program the camera/display example. The pinned fork commit preserves the camera component selection and the active target.
 
-**The inference runner is not yet a standalone buildable project.** Root-level `main.cpp` references model/image headers under `assets/`, board support, ExecuTorch, the Ethos-U driver, and SEGGER RTT that are not included here. It has not been integrated into Viewfinder's CMSIS project or memory layout.
+**Root-level `main.cpp` is an unvalidated legacy reference, not the supported target.** It references model/image headers under `assets/`, board support, ExecuTorch, the Ethos-U driver, and SEGGER RTT that are not included here. Use the separate targets below; neither is integrated into Viewfinder's CMSIS project.
 
 For the separate pinned inference toolchain, start with:
 
@@ -120,6 +121,14 @@ Once the smoke model and runtime manifests exist, build the separate [smoke firm
 ```bash
 python3 -m tools.smoke_firmware --jobs 1
 ```
+
+For the separate [stored-image target](firmware/stored_image/README.md), after a matching MobileNet/reference export:
+
+```bash
+python3 -m tools.stored_image_firmware --layout hp-only-large --image ml/reference/images/cat.jpg --jobs 1
+```
+
+This command is build-only. The larger layout reclaims default HE/user MRAM. The user has confirmed this board is HP-only, and the [host-only package preparation/review](firmware/stored_image/README.md#prepare-and-review-without-programming) is complete. The separate [stored-image programmer](firmware/stored_image/README.md#deliberate-programming--separate-confirmation-gated-command) defaults to review only; writing requires explicit `--write`, a terminal, and typed confirmation. It has not been used to flash this target; do not use the smoke/Viewfinder programming task for it.
 
 Integrate the runner with the matching Alif/CMSIS project and verified SDK/toolchain versions. Follow the bring-up sequence and reference examples in [`HandGPT_PROJECT_PLAN.md`](HandGPT_PROJECT_PLAN.md), then record reproducible build, flash, and output-reading instructions once validated.
 
