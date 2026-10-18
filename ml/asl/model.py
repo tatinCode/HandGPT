@@ -8,6 +8,7 @@ from torchvision.transforms import InterpolationMode
 from PIL import ImageOps
 
 from .data import CLASSES
+from tools.asl_contract import STATIC_CLASSES
 
 
 def contract(size):
@@ -49,9 +50,9 @@ def make_model(weights=None, classes=CLASSES):
 def load_checkpoint(path):
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
     schema = checkpoint.get("schema")
-    if schema not in (1, 2) or checkpoint.get("architecture") != "mobilenet_v2":
+    if schema not in (1, 2, 3) or checkpoint.get("architecture") != "mobilenet_v2":
         raise ValueError("Unsupported checkpoint")
-    classes = CLASSES if schema == 1 else ADAPTED_CLASSES
+    classes = CLASSES if schema == 1 else ADAPTED_CLASSES if schema == 2 else STATIC_CLASSES
     if checkpoint.get("classes") != list(classes):
         raise ValueError("Checkpoint label order differs from the ASL contract")
     size = checkpoint["preprocessing"]["size"]

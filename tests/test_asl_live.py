@@ -11,6 +11,7 @@ from unittest import mock
 from tools import asl_live_firmware as live
 from tools.inference import ROOT, SetupError
 from tools import asl_selftest
+from tools.asl_contract import LEGACY_CLASSES, class_header
 
 
 class LiveBuildTests(unittest.TestCase):
@@ -57,10 +58,11 @@ class LiveNativeTests(unittest.TestCase):
                                   "firmware/camera_inference/include", "firmware/smoke/include")
                 for arg in ("-I", str(ROOT / folder))]
 
-    def test_selftest_limits_experimental_footer_and_bounds(self):
+    def test_selftest_limits_clean_panel_and_bounds(self):
         with tempfile.TemporaryDirectory() as directory:
             exe = Path(directory) / "checks"
-            subprocess.run(["c++", "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", *self.includes(),
+            (Path(directory) / 'asl_classes.h').write_text(class_header(LEGACY_CLASSES))
+            subprocess.run(["c++", "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", '-I', directory, *self.includes(),
                             str(ROOT / "tests/native/asl_live_checks_test.cpp"), "-o", str(exe)], check=True, capture_output=True)
             subprocess.run([str(exe)], check=True, capture_output=True, timeout=10)
             # Same vectors through the actual C++ gate and the observer's Python

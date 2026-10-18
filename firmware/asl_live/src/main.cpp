@@ -17,7 +17,7 @@
 
 int main() {
     if (!smoke_board_init()) { fail(300); }
-    std::printf("\nHandGPT LIVE ASL EXPERIMENTAL; A B C L Y NO_HAND OTHER; threshold=0.80\n");
+    std::printf("\nHandGPT LIVE ASL EXPERIMENTAL; classes=%s; threshold=0.80\n", handgpt::kAslClassOrder);
     std::printf("model_sha256=%s input_sha256=%s; LCD rotated 180; ML input NOT rotated\n",
                 IMAGE_MODEL_SHA256, IMAGE_INPUT_SHA256);
     if (!preview_init()) { fail(301); }
@@ -32,11 +32,12 @@ int main() {
         if (!preview_frame()) { fail(305); }
         if (static_cast<uint32_t>(smoke_millis() - last) >= 1000) {
             last = smoke_millis();
-            constexpr const char* names[] = {"--", "A", "B", "C", "L", "Y"};
+            const auto value = live_asl_letter(last);
             std::clearerr(stdout);
             std::printf("LIVE ASL frames=%lu predictions=%lu display=%s latency_ms=%lu fault=%u IRQs=%lu jobs=%lu/%lu\n",
                 static_cast<unsigned long>(preview_frames()), static_cast<unsigned long>(live_asl_predictions()),
-                names[static_cast<unsigned>(live_asl_letter(last))], static_cast<unsigned long>(live_asl_latency()),
+                handgpt::valid_letter(value) ? handgpt::kAslNames[static_cast<unsigned>(value)] : "--",
+                static_cast<unsigned long>(live_asl_latency()),
                 live_asl_faulted() ? 1u : 0u, static_cast<unsigned long>(g_smoke_status.npu_irqs),
                 static_cast<unsigned long>(g_smoke_status.npu_jobs_started),
                 static_cast<unsigned long>(g_smoke_status.npu_jobs_finished));

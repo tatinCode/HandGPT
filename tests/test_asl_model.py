@@ -78,11 +78,7 @@ class ASLModelTests(unittest.TestCase):
         unknown = np.array([[.99, .002, .002, .002, .002, .002]])
         selected, tradeoff, _ = choose_threshold(known, np.array([0]), unknown)
         self.assertIsNone(selected)
-        self.assertEqual(tradeoff["unknown_acceptance_rate"], 1.)
-        unknown = np.array([[.2, .2, .2, .2, .1, .1]])
-        selected, _, _ = choose_threshold(known, np.array([0]), unknown)
-        self.assertEqual(selected["unknown_acceptance_rate"], 0.)
-        self.assertEqual(selected["known_coverage"], 1.)
+        djalsdjsakjadkj
 
 
 if __name__ == "__main__":

@@ -27,7 +27,7 @@
 using namespace executorch::runtime;
 
 // Keep ALL measured reservations and the existing layout-verifier symbols.
-// Only the first 128x128x3 inputs / seven outputs are used by this ASL model.
+// Only the first 128x128x3 inputs / kAslClassCount outputs are used by ASL.
 extern "C" {
 alignas(32) uint8_t g_image_method_pool[IMAGE_METHOD_BYTES];
 __attribute__((section(".bss.handgpt_npu"), aligned(32))) uint8_t g_image_arena[IMAGE_ARENA_BYTES];
@@ -37,6 +37,7 @@ __attribute__((section(".bss.handgpt_npu"), aligned(32))) float g_image_output[h
 }
 static_assert(sizeof(reference_input) == sizeof(g_image_input), "Reference reservation changed");
 static_assert(sizeof(reference_logits) == sizeof(g_image_output), "Output reservation changed");
+static_assert(handgpt::kAslClassCount <= handgpt::kClasses, "ASL exceeds preserved output reservation");
 static_assert(handgpt::kReferenceGateRevision == 2 &&
               handgpt::kReferenceMaxOutputSteps == handgpt::kAslMaxOutputSteps &&
               handgpt::kReferenceMinimumCosine == handgpt::kAslMinimumCosine &&
@@ -109,9 +110,9 @@ bool execute() {
     if (!result.isTensor()) { return reject(312); }
     const auto& out = result.toTensor();
     if (out.scalar_type() != executorch::aten::ScalarType::Float || out.dim() != 2 ||
-        out.size(0) != 1 || out.size(1) != 7) { return reject(313); }
-    std::memcpy(g_image_output, out.const_data_ptr<float>(), 7 * sizeof(float));
-    for (unsigned i = 0; i < 7; ++i) { if (!std::isfinite(g_image_output[i])) { return reject(314); } }
+        out.size(0) != 1 || out.size(1) != handgpt::kAslClassCount) { return reject(313); }
+    std::memcpy(g_image_output, out.const_data_ptr<float>(), handgpt::kAslClassCount * sizeof(float));
+    for (unsigned i = 0; i < handgpt::kAslClassCount; ++i) { if (!std::isfinite(g_image_output[i])) { return reject(314); } }
     return true;
 }
 } // namespace
@@ -134,7 +135,7 @@ bool live_asl_init() {
     const auto in = input.get(), out = output.get();
     if (in.scalar_type() != executorch::aten::ScalarType::Float || in.sizes().size() != 4 ||
         in.dim_order().size() != 4 || out.scalar_type() != executorch::aten::ScalarType::Float ||
-        out.sizes().size() != 2 || out.sizes()[0] != 1 || out.sizes()[1] != 7 ||
+        out.sizes().size() != 2 || out.sizes()[0] != 1 || out.sizes()[1] != handgpt::kAslClassCount ||
         out.dim_order().size() != 2 || out.dim_order()[0] != 0 || out.dim_order()[1] != 1) { return reject(319); }
     for (unsigned i = 0; i < 4; ++i) {
         if (in.sizes()[i] != sizes[i] || in.dim_order()[i] != order[i]) { return reject(319); }
@@ -167,19 +168,20 @@ bool live_asl_init() {
             return reject(328); // Detect repeated-run allocator growth before live inference.
         }
         double error, cosine;
-        const bool match = handgpt::asl_reference_matches(g_image_output, reference_logits, 7,
+        const bool match = handgpt::asl_reference_matches(g_image_output, reference_logits, handgpt::kAslClassCount,
                             handgpt::kReferenceOutputScale, error, cosine);
         std::printf("ASL SELFTEST repeat=%u max_error=%f cosine=%f method_high_water=%u temporary_high_water=%u output_steps=%f\n",
                     repeat + 1, error, cosine, static_cast<unsigned>(method_allocator.high_water),
                     static_cast<unsigned>(temporary_allocator.high_water), error / handgpt::kReferenceOutputScale);
-        for (unsigned i = 0; i < 7; ++i) {
+        for (unsigned i = 0; i < handgpt::kAslClassCount; ++i) {
             std::printf("ASL LOGIT %u actual=%f host=%f\n", i, static_cast<double>(g_image_output[i]), static_cast<double>(reference_logits[i]));
         }
         if (!match || g_smoke_status.uart_timeouts) { return reject(325); }
     }
     stable.observe(handgpt::AslLetter::None, smoke_millis());
     ready = true;
-    std::printf("ASL SELFTEST PASS checked=7 repeats=3; reference predictions NOT shown as live\n");
+    std::printf("ASL SELFTEST PASS checked=%u repeats=3; reference predictions NOT shown as live\n",
+                static_cast<unsigned>(handgpt::kAslClassCount));
     return g_smoke_status.uart_timeouts ? reject(327) : true;
 }
 
@@ -198,5 +200,5 @@ void live_asl_predict(const uint8_t* rgb, size_t bytes) {
     }
     latency = smoke_millis() - start;
     ++predictions;
-    stable.observe(handgpt::letter_from_logits(g_image_output, 7, 0.8f), smoke_millis());
+    stable.observe(handgpt::letter_from_logits(g_image_output, handgpt::kAslClassCount, 0.8f), smoke_millis());
 }

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from tools.inspect_reference_pte import inspect_vela_payload
 from tools.asl_selftest import output_scale
+from tools.asl_contract import LEGACY_CLASSES, validate_classes
 
 
 CPU_OPERATORS = {
@@ -13,13 +14,14 @@ CPU_OPERATORS = {
 }
 
 
-def validate_methods(methods):
+def validate_methods(methods, classes=LEGACY_CLASSES):
+    classes = validate_classes(classes)
     if not isinstance(methods, list) or len(methods) != 1:
         raise ValueError("ASL requires exactly one forward method")
     method = methods[0]
     if method.get("name") != "forward" or method.get("delegates") != ["EthosUBackend"]:
         raise ValueError("ASL requires one Ethos-U delegate")
-    for name, shape in (("inputs", [1, 3, 128, 128]), ("outputs", [1, 7])):
+    for name, shape in (("inputs", [1, 3, 128, 128]), ("outputs", [1, len(classes)])):
         values = method.get(name)
         if (not isinstance(values, list) or len(values) != 1 or
                 values[0] != dict(shape=shape, dtype="FLOAT", dim_order=list(range(len(shape))))):
@@ -34,7 +36,8 @@ def validate_methods(methods):
         raise ValueError("Invalid ASL planned-buffer sizes")
 
 
-def inspect(pte):
+def inspect(pte, classes=LEGACY_CLASSES):
+    classes = validate_classes(classes)
     from executorch.exir._serialize._program import deserialize_pte_binary
     from executorch.exir.schema import DataLocation, Tensor, KernelCall, Double, Int, ScalarType
 
@@ -61,7 +64,7 @@ def inspect(pte):
                             delegates=[d.id for d in plan.delegates],
                             cpu_operators=[dict(name=op.name, overload=op.overload) for op in plan.operators],
                             planned_buffer_bytes=plan.non_const_buffer_sizes[1:]))
-    validate_methods(methods)
+    validate_methods(methods, classes)
     if len(delegate_memory) != 1:
         raise ValueError("Expected exactly one ASL Vela payload")
     # Follow the actual output-producing instruction, not a random scalar
@@ -76,7 +79,7 @@ def inspect(pte):
     if (op.name, op.overload) != ("cortex_m::dequantize_per_tensor", "out") or len(call.args) != 8:
         raise ValueError("Unexpected ASL output dequantization instruction")
     source, scale, zero, minimum, maximum, dtype, out, returned = [plan.values[i].val for i in call.args]
-    if (not isinstance(source, Tensor) or source.scalar_type != ScalarType.CHAR or source.sizes != [1, 7] or
+    if (not isinstance(source, Tensor) or source.scalar_type != ScalarType.CHAR or source.sizes != [1, len(classes)] or
             not isinstance(scale, Double) or any(not isinstance(v, Int) for v in (zero, minimum, maximum, dtype)) or
             not -128 <= zero.int_val <= 127 or (minimum.int_val, maximum.int_val, dtype.int_val) != (-128, 127, 1) or
             call.args[-2] != call.args[-1]):
@@ -86,11 +89,11 @@ def inspect(pte):
                 pte_sha256=hashlib.sha256(binary).hexdigest(), pte_bytes=len(binary), hardware_verified=False)
 
 
-def memory_report(metadata, stored_image_metadata):
+def memory_report(metadata, stored_image_metadata, classes=LEGACY_CLASSES):
     """Retain the proven reservations; do not reduce them to the new minima."""
     from tools import stored_image_firmware as stored
 
-    validate_methods(metadata["methods"])
+    validate_methods(metadata["methods"], classes)
     used = 0
     for size in metadata["methods"][0]["planned_buffer_bytes"]:
         used = (used + 31) // 32 * 32 + size

@@ -29,6 +29,8 @@ class PrepareLiveTests(guards.PrepareCameraInferenceTests):
         self.assertNotEqual(engine.PROGRAM, capture.PROGRAM)
         self.assertIs(engine.check_build, live.live.check_build)
         self.assertEqual(before, (capture.PROGRAM, capture.IMAGE_NAME, capture.check_build))
+        self.assertEqual(live.PROGRAM.name, "asl-static-programming-v1")
+        self.assertNotEqual(live.PROGRAM, inference.WORK / "asl-live-programming-v1")
 
     def test_smoke_build_cannot_be_used_as_stored_image_build(self):
         with tempfile.TemporaryDirectory() as directory:

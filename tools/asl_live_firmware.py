@@ -18,15 +18,16 @@ from tools import prepare_camera_inference as capture
 from tools import prepare_stored_image as accepted
 from tools import program_smoke as shared
 from tools import asl_selftest
+from tools.asl_contract import STATIC_CLASSES, class_header
 
 
 ROOT = common.ROOT
-WORKSPACE = common.WORK / "asl-live-firmware-v6"
+WORKSPACE = common.WORK / "asl-live-firmware-v7"
 APPLICATION = ROOT / "firmware/asl_live"
 PROFILE = camera.image.PROFILE
 BUILD_TARGET = "camera-inference.debug+DevKit-E8-HP"
 LIVE = dict(experimental=True, deployment_approved=False, threshold=0.8, threshold_calibrated=False,
-            classes=["A", "B", "C", "L", "Y", "NO_HAND", "OTHER"], screen_rotation_degrees=180,
+            classes=list(STATIC_CLASSES), screen_rotation_degrees=180,
             camera_input_rotation_degrees=0, boot_selftest="ASL exact-input; three repeats",
             boot_frame_export=False, negative_display="--", consecutive_predictions=3,
             stale_ms=1000, inference_fault="latched until reset; clear letter; keep preview",
@@ -89,31 +90,35 @@ def export_info(directory, inspect_binary=False):
         manifest.get("target") != common.TARGET or manifest.get("memory_mode") != "Sram_Only" or
         manifest.get("executorch_revision") != common.REVISION or manifest.get("deployment_approved") is not False or
         manifest.get("hardware_verified") is not False or manifest.get("final_test_evaluated") is not False):
-        raise common.SetupError("Expected a completed, explicitly experimental seven-class ASL export")
+        raise common.SetupError("Expected a completed, explicitly experimental static-26 ASL export")
     files = manifest["artifact_sha256"]
     actual = {str(p.relative_to(directory)) for p in directory.rglob("*") if p.is_file() and p.name != "manifest.json"}
     accepted.identities(files, actual, directory)
     for key in files:
         shared.inside(directory / key, directory)
     metadata = reports.read_json(directory / "program_metadata.json")
-    inspector.validate_methods(metadata["methods"])
+    inspector.validate_methods(metadata["methods"], manifest["classes"])
     reference = reports.read_json(directory / "reference/reference.json")
     gate = asl_selftest.validate_policy(manifest, reference)
+    if reference.get("classes") != manifest["classes"] or len(reference.get("host_logits", [])) != len(STATIC_CLASSES):
+        raise common.SetupError("Reference class order/count differs from model")
     if metadata.get("output_scale") != gate["output_scale"]:
         raise common.SetupError("Serialized PTE output scale differs from the self-test policy")
     if metadata["pte_sha256"] != manifest["pte_sha256"] or common.sha256(directory / "asl_ethosu85_256.pte") != manifest["pte_sha256"]:
         raise common.SetupError("ASL export PTE identities disagree")
-    memory = inspector.memory_report(metadata, reports.read_json(common.WORK / "models/mv2/program_metadata.json"))
+    memory = inspector.memory_report(metadata, reports.read_json(common.WORK / "models/mv2/program_metadata.json"), manifest["classes"])
     if memory != manifest["memory"] or not memory["fits_existing_runtime_pools"]:
         raise common.SetupError("ASL does not fit the unreduced runtime reservations")
     config = reports.read_json(directory / "configuration.json")
-    if config["threshold"] != 0.8:
-        raise common.SetupError("ASL threshold changed")
+    if (config["threshold"] != 0.8 or config.get("classes") != manifest["classes"] or
+            config.get("preprocessing") != manifest.get("preprocessing")):
+        raise common.SetupError("ASL threshold/classes/preprocessing changed or disagree")
     for name, digest in config["input_sha256"].items():
         if common.sha256(Path(name)) != digest:
             raise common.SetupError(f"ASL calibration/checkpoint/source changed: {name}")
     if inspect_binary:
-        code = "import json,sys; from tools.inspect_asl_pte import inspect; print(json.dumps(inspect(sys.argv[1])))"
+        code = ("import json,sys; from tools.inspect_asl_pte import inspect; "
+                "from tools.asl_contract import STATIC_CLASSES; print(json.dumps(inspect(sys.argv[1], STATIC_CLASSES)))")
         result = subprocess.run([str(common.PYTHON), "-B", "-c", code, str(directory / "asl_ethosu85_256.pte")],
                                 cwd=ROOT, env=common.build_environment(1), capture_output=True, text=True, check=True)
         if json.loads(result.stdout) != metadata:
@@ -124,7 +129,7 @@ def export_info(directory, inspect_binary=False):
 def reference_bytes(directory):
     directory = Path(directory)
     raw = (directory / "reference/input.f32").read_bytes()
-    logits = reports.read_float_npy(directory / "reference/quantized-host-logits.npy", (1, 7))
+    logits = reports.read_float_npy(directory / "reference/quantized-host-logits.npy", (1, len(STATIC_CLASSES)))
     if len(raw) != 3 * 128 * 128 * 4 or any(not math.isfinite(x) for x, in struct.iter_unpack("<f", raw)):
         raise common.SetupError("Invalid exact ASL reference input")
     if any(not math.isfinite(x) for x, in struct.iter_unpack("<f", logits)):
@@ -186,6 +191,10 @@ def configure(pack, runtime, directory):
                                         os.path.relpath(ROOT / "firmware/camera_overlay/include", WORKSPACE)]
     project_path.write_text(json.dumps(project, indent=2) + "\n")
     assets = WORKSPACE / "assets"
+    generated_classes = class_header(STATIC_CLASSES)
+    if (APPLICATION / "include/asl_classes.h").read_text() != generated_classes:
+        raise common.SetupError("Checked-in ASL class header differs from the export contract")
+    (assets / "asl_classes.h").write_text(generated_classes)
     common.emit_model_header(directory / "asl_ethosu85_256.pte", assets / "reference_model_pte.h")
     data = reference_bytes(directory)
     for name in ("reference_input", "reference_logits"):
@@ -204,7 +213,7 @@ def configure(pack, runtime, directory):
 
 
 def source_paths():
-    paths = {Path(__file__), ROOT / "tools/inspect_asl_pte.py", ROOT / "tools/asl_selftest.py", camera.APPLICATION / "src/preview.cpp",
+    paths = {Path(__file__), ROOT / "tools/inspect_asl_pte.py", ROOT / "tools/asl_selftest.py", ROOT / "tools/asl_contract.py", camera.APPLICATION / "src/preview.cpp",
              camera.APPLICATION / "src/power.cpp", ROOT / "firmware/smoke/src/platform.cpp"}
     for folder in (APPLICATION, camera.APPLICATION / "include", ROOT / "firmware/smoke/include",
                    ROOT / "firmware/stored_image/include", ROOT / "firmware/camera_overlay/include"):
@@ -242,6 +251,9 @@ def check_build(export_manifest):
     accepted.identities(meta["generated_sha256"], generated, WORKSPACE)
     if (WORKSPACE / "assets/reference_gate.h").read_text() != gate_header(export["selftest_gate"]):
         raise common.SetupError("Generated ASL gate differs from exported reference policy")
+    if ((WORKSPACE / "assets/asl_classes.h").read_text() != class_header(export["classes"]) or
+            (APPLICATION / "include/asl_classes.h").read_text() != class_header(export["classes"])):
+        raise common.SetupError("Generated/checked-in class orders differ from the model")
     accepted.identities(meta["project_sha256"], capture.PROJECTS, WORKSPACE)
     binary = WORKSPACE / "out/camera-inference/DevKit-E8-HP/debug/camera-inference.bin"
     elf, commands = binary.with_suffix(".elf"), binary.parent / "compile_commands.json"

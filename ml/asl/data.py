@@ -48,7 +48,7 @@ def dhash(image):
     return value
 
 
-def split_records(records, seed, block_size):
+def split_records(records, seed, block_size, classes=CLASSES):
     """Number blocks are conservative proxies, NOT verified signer/session IDs.
 
     Assign complete blocks first. Quarantine evaluation images resembling any
@@ -58,7 +58,7 @@ def split_records(records, seed, block_size):
     if block_size < 1:
         raise ValueError("block_size must be positive")
     candidates = {split: [] for split in SPLITS}
-    for label in CLASSES:
+    for label in classes:
         groups = defaultdict(list)
         for record in records:
             if record["label"] == label:
@@ -89,19 +89,21 @@ def split_records(records, seed, block_size):
         retained.extend(current)
     counts = Counter((r["split"], r["label"]) for r in retained)
     for split in SPLITS:
-        for label in CLASSES:
+        for label in classes:
             if counts[split, label] < 20:
                 raise ValueError(f"Only {counts[split, label]} retained {split}/{label} images; inspect grouping")
     return retained, quarantined
 
 
-def prepare(args):
+def prepare(args, classes=CLASSES, folders=FOLDERS):
     from PIL import Image, ImageDraw, ImageOps
     root, output = args.root.resolve(), args.output.resolve()
     if output.exists():
         raise ValueError(f"Refusing to overwrite {output}; select a new output directory")
     records, duplicates, seen = [], [], {}
-    for label, folder in zip(CLASSES, FOLDERS):
+    if len(classes) != len(folders) or len(set(classes)) != len(classes):
+        raise ValueError("Classes and folders must have a unique one-to-one mapping")
+    for label, folder in zip(classes, folders):
         paths = sorted((root / folder).glob("*.jpg"))
         if not paths:
             raise ValueError(f"No JPEG images in {root / folder}")
@@ -125,23 +127,23 @@ def prepare(args):
                 seen[pixel_hash] = record
                 records.append(record)
         print(f"Inventoried {folder}: {len(paths)} images", flush=True)
-    retained, quarantined = split_records(records, args.seed, args.block_size)
+    retained, quarantined = split_records(records, args.seed, args.block_size, classes)
     summary = {
         "counts": {split: {label: sum(r["split"] == split and r["label"] == label for r in retained)
-                           for label in CLASSES} for split in SPLITS},
+                           for label in classes} for split in SPLITS},
         "exact_duplicates_removed": len(duplicates), "near_duplicate_eval_images_quarantined": len(quarantined),
         "signer_independent": False,
         "limitations": "Filename blocks are not verified sessions. dHash screening is heuristic, not proof of no leakage.",
     }
-    manifest = dict(schema=1, root=str(root), classes=list(CLASSES), seed=args.seed,
+    manifest = dict(schema=1, root=str(root), classes=list(classes), seed=args.seed,
                     block_size=args.block_size, dhash_radius=2, summary=summary, records=retained,
                     duplicates=duplicates, quarantined=quarantined)
     output.mkdir(parents=True)
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     # Six spread-out examples per class to inspect labels/backgrounds visually.
-    sheet = Image.new("RGB", (6 * 160, len(CLASSES) * 180), "white")
+    sheet = Image.new("RGB", (6 * 160, len(classes) * 180), "white")
     draw = ImageDraw.Draw(sheet)
-    for row, label in enumerate(CLASSES):
+    for row, label in enumerate(classes):
         examples = sorted((r for r in retained if r["label"] == label), key=lambda r: r["number"])
         for col in range(6):
             record = examples[col * (len(examples) - 1) // 5]

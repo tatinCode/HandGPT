@@ -88,7 +88,18 @@ alongside percentages, separate results for the presenter, and retain failures.
 If the model changes after inspecting this session, it becomes development data
 and a new final session is needed.
 
-## 5. On-device letters — first boot failed; revised build awaiting acceptance
+## 5. On-device letters — v6 user-reported working; static alphabet expansion
+
+The user reports v6 live predictions working (L recognized; Y and negative
+rejection weak). No reviewed three-repeat/cold-boot log or independent accuracy
+claim follows from that report. The user now requests **all 24 static letters**
+(exclude J/Z/delete/space), individual-letter display only. A separate static-26
+model/build/package retains v6 as a fallback. **19 letters lack reviewed camera
+examples**; adding outputs does not fix domain shift or guarantee rejection.
+See the [static alphabet audit](asl-static-alphabet.md) and
+[current live workflow](../firmware/asl_live/README.md).
+
+### Preserved first-live-build history
 
 The engineering candidate is the preserved head-only seven-class model,
 not the weaker displayed-letter fine-tune. Training-only int8 export completed;

@@ -11,14 +11,14 @@ from tools import prepare_camera_inference as capture
 from tools import program_smoke as shared
 
 
-PROGRAM = common.WORK / "asl-live-programming-v1"
+PROGRAM = common.WORK / "asl-static-programming-v1"
 TARGET = "asl-live-experimental.debug+DevKit-E8-HP"
 IMAGE_NAME = "handgpt-asl-live-experimental.bin"
 CONFIG_NAME = "handgpt-asl-live-experimental.json"
 
 
 def helper_identities():
-    names = ("prepare_asl_live.py", "program_asl_live.py", "asl_live_firmware.py", "inspect_asl_pte.py", "asl_selftest.py",
+    names = ("prepare_asl_live.py", "program_asl_live.py", "asl_live_firmware.py", "inspect_asl_pte.py", "asl_selftest.py", "asl_contract.py",
              "prepare_camera_inference.py", "program_camera_inference.py", "camera_inference_firmware.py",
              "prepare_stored_image.py", "program_stored_image.py", "program_smoke.py", "smoke_firmware.py",
              "stored_image_firmware.py", "inference.py", "memory_preflight.py", "firmware_layouts.py")
@@ -31,9 +31,10 @@ def print_review(receipt, stage):
     print(f"Image: {IMAGE_NAME}; {receipt['binary_bytes']} bytes; SHA-256 {receipt['binary_sha256']}")
     print(f"HP application: [{layout['image_address']}, {layout['image_end']})")
     print(f"DEVICE/certificates/ATOC: [{layout['package_address']}, {layout['package_end']}); {layout['package_bytes']} bytes")
-    print("Real camera -> U85 predictions; A/B/C/L/Y; NO_HAND/OTHER/uncertainty -> --; no cycling.")
-    print("Known PT2E result: 12/30 correct letters, 2 wrong; 0/12 false letters on reviewed negatives.")
-    print("Quantization nonregression gate FAILED; user opted into an experimental engineering trial.")
+    print("Real camera -> U85; 24 static letters (no J/Z/del/space); NO_HAND/OTHER/uncertainty -> --; no cycling.")
+    print("19 letters have NO reviewed E8-camera examples. All letters remain experimental.")
+    print("Per-class float/PT2E metrics and quantization nonregression results are in the bound export manifest.")
+    print("Kaggle metrics are not camera accuracy; this package is NOT deployment-approved.")
     print("ASL exact-input boot self-test replaces ImageNet ONLY in this separate image; fallbacks retained.")
     print("GATE REVISION 2 (post-hoc, user-approved): <=8 output steps; cosine>=0.999; top-1 and 0.80 display decision match.")
     print("Previous v5 boot failed gate 0.5 at 0.557068 (error 325); this revision still needs hardware acceptance.")

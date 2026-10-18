@@ -1,221 +1,131 @@
-# Experimental live ASL — revised self-test; new hardware acceptance pending
+# Experimental static ASL alphabet
 
-The user confirmed the upright TEST UI, then installed live firmware v5. Its
-first boot **failed the numerical self-test** (error 325, red LED); live startup
-was correctly blocked. The revised v6 image below is built and prepared for a
-new deliberate user flash, **not flashed by the agent**. The user explicitly
-approved this post-hoc gate revision after reviewing the failure, as well as
-choosing an experimental trial despite the
-accuracy regression, and approved replacing ImageNet with an ASL boot self-test
-in this new image if the two models could not fit. Original fallbacks are retained.
+Individual-letter recognition, **not words or name accumulation**. Output order:
 
-`include/camera_input.h` implements the real camera input contract:
-
-- Read the original 480×480 planar RGB after full-frame completion, pipeline Stop
-  and cache invalidation. Never read the LCD or rotate/mirror ML input.
-- Reuse the v4 full-view, Pillow-equivalent antialiased bilinear 128×128 resize.
-- Normalize float32 NCHW with the training ImageNet means/deviations.
-- Use one 128-byte row scratch and an existing input allocation, not a new video
-  buffer. Host tests compare every element against the training transform.
-
-## First engineering model
-
-Use `.work/asl/adapt-v1/best.pth` (schema 2, A/B/C/L/Y/NO_HAND/OTHER), not the
-later fine-tune. At the unchanged provisional 0.80 threshold it displayed 13/30
-development letters correctly, versus 11/30 for the fine-tune. Both had zero
-observed false letters on 12 reviewed negative scenes. These are weak, small-set
-development results, **not deployment approval** or robust rejection evidence.
-
-The new host-only export command runs in the existing isolated inference venv:
-
-```bash
-OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
-  .work/inference/venv/bin/python -B -m ml.asl.export \
-  --output .work/asl/asl-u85-export-NEW
+```text
+A B C D E F G H I K L M N O P Q R S T U V W X Y NO_HAND OTHER
 ```
 
-Choose a new output directory each time; failed/incomplete exports are retained.
-The completed `manifest.json` is written last. The exporter:
+J/Z require motion and are unsupported. Kaggle `J`, `Z`, `del`, and `space`
+folders are excluded entirely, not relabeled OTHER. `nothing` maps to NO_HAND;
+OTHER uses the existing reviewed camera negatives. Excluded gestures are **not
+guaranteed** to produce `--`. This is not a robust sign-language interpreter.
 
-1. Verifies the checkpoint, label review and whole-session audit bindings.
-2. Calibrates on exactly the 61 reviewed camera TRAIN and 600 recorded original
-   rehearsal TRAIN images. Development validation never updates observers.
-3. Scores float and PT2E int8-simulated outputs on the same 42 reviewed
-   development-validation images at 0.80, without threshold tuning or final tests.
-4. Saves a hash-bound training reference PNG, normalized input and quantized-host
-   logits; reloaded graph outputs must reproduce validation logits exactly.
-5. Compiles for Ethos-U85-256 / Sram_Only and inspects the serialized PTE, not just
-   the delegation text. Require one NPU subgraph; only the established CPU
-   quantize/dequantize boundary kernels may remain.
-6. Checks arena/scratch against the existing, unreduced runtime reservations and
-   reports whether two models alone exceed the MRAM application region.
+**19 new letters have no reviewed E8-camera examples.** Only A/B/C/L/Y and
+negative scenes have camera development data. Dataset performance cannot
+establish that ANGELA or any name can be signed reliably on the board.
 
-The predeclared quantization engineering gate requires no reduction in correct
-displayed letters and no increase in wrong/negative false letters relative to
-the float candidate. Passing it does not establish acceptable recognition.
-**Host PT2E simulation is not compiled Vela or board execution.**
+## Preserved baseline
 
-## Completed export and firmware checks
+The user reported v6 working, including L, but Y and rejection remained weak.
+[V6 history](V6_HISTORY.md) records that model and its post-hoc gate revision.
+V5/v6 firmware, exports, packages, old latest pointer and logs remain unchanged.
+New workspace: `.work/inference/asl-live-firmware-v7/`. New package pointer:
+`.work/inference/asl-static-programming-v1/`. Matching v6 source is preserved in
+commit `279be0e` and `.work/inference/static-asl-v1-baseline/source.tar`.
+Current helpers reject stale build identities; old packages must be used with
+their matching source revision, not by bypassing checks.
 
-- Completed export: `.work/asl/export-v5/manifest.json`. Original export v4 and
-  all earlier attempts are retained. Reference input, host validation logits
-  and the compiled NPU payload are byte-identical to v4; only the embedded export
-  directory in the PTE compile-spec metadata changed, giving a new PTE hash.
-- ASL PTE: **2,555,632 bytes**, SHA-256
-  `dbfb56207ad23bc9064226b7f32d3e8159d0ca58920c51e72da20c6864da410c`.
-  The final graph and serialized PTE output dequantization scale are both
-  **0.18568913638591766**; a mismatch fails the export/build.
-- One U85 delegate; only CPU quantize/dequantize boundary operators. Planned
-  arena **245,760 bytes**, scratch **491,520 bytes**. Reservations stay at
-  **752,640 arena / 1,572,864 temporary / 262,144 method** bytes. The existing
-  602,112-byte input and 4,000-byte output allocations are also retained.
-- Float development behavior: **13/30 correct letters, 1 wrong**. PT2E int8:
-  **12/30 correct, 2 wrong**. Both: **0/12 false letters on reviewed negatives**.
-  The predeclared quantization nonregression gate **failed**; nothing is marked
-  deployment-approved, and neither result proves robust unknown rejection.
-- Quantized graph reload logit delta: **0.0**. Training-only exact reference
-  input SHA-256: `370e58b2c53f95f23bf10932e6b70616caf36ed3841eae53f98b6dbf6856058c`.
-- Two models alone occupy **6,391,152 bytes**, exceeding the **5,238,784-byte**
-  application MRAM region. Only this separate live image replaces ImageNet.
-- Firmware: `.work/inference/asl-live-firmware-v6/manifest.json`, **3,449,424
-  bytes**, SHA-256
-  `656d0ab4db15071fe3e70e49f40e14bbb7e0f390cd977330890ca2b989cf2442`.
-  MRAM `[0x80001000, 0x8034b250)`, **1,789,360 bytes** headroom. Camera/LCD
-  reservations remain **2,227,200 bytes** in SRAM1. Vectors, IRQ 366, startup
-  tables, MRAM GOT, runtime/SDK/ABI and exact embedded model/reference bytes pass
-  fresh build/package review.
-- **371 host tests passed** including pixel/tensor agreement, experimental
-  footer/bounds, camera ownership, repeated buffer flips, safe fatal-error
-  blanking/failure-code rendering, startup gates, C++/Python comparison agreement,
-  and inherited package/writer tamper/confirmation checks.
+## Host workflow (no device access)
 
-Build (one job, separate workspace; refuses overwrite):
+Use existing isolated environments; no global installs. Never overwrite an
+existing output directory; choose a new version when retrying.
 
 ```bash
-python3 -B -m tools.asl_live_firmware --export .work/asl/export-v5 \
+OMP_NUM_THREADS=1 .work/asl/venv/bin/python -B -m ml.asl.static_data
+OMP_NUM_THREADS=2 .work/asl/venv/bin/python -B -m ml.asl.static_train
+OMP_NUM_THREADS=2 .work/asl/venv/bin/python -B -m ml.asl.static_train \
+  --output .work/asl/static-train-v2 --camera-fraction 0.25 --samples-per-epoch 16384
+OMP_NUM_THREADS=1 .work/inference/venv/bin/python -B -m ml.asl.static_export \
+  --checkpoint .work/asl/static-train-v2/best.pth
+python3 -B -m tools.asl_live_firmware --export .work/asl/static-export-v1 \
   --experimental --layout hp-only-large --jobs 1
-```
-
-## Runtime behavior and limitations
-
-The complete camera frame is stopped/invalidated before preprocessing and NPU
-execution. The persistent method is loaded once. A fresh prediction is observed
-once per completed inference, not on repeated reads of an old result. Three
-matching accepted predictions are needed to display a letter; negative,
-different, uncertain, nonfinite or stale observations clear it. Inference faults
-latch until reset and clear the glyph while preview continues.
-
-The screen says **ASL / EXPERIMENTAL**, retains whole-LCD 180° rotation, and has
-**no clock-based symbol sequence**. Original camera input is not rotated or
-mirrored. No extra camera/display/NPU pools are allocated or reduced.
-
-## First hardware failure and explicitly approved gate revision
-
-Preserved evidence: `.work/inference/asl-live-acceptance/boot01.log`.
-The original v5 binary (`364df250…`) ran three preview frames, initialized the
-U85 and completed its first inference. It reported **max error 0.557068**, cosine
-**0.999673**, matching top-1 A, method high-water **864 bytes**, and temporary
-high-water **491,520 bytes**. The **predeclared 0.5 bound failed**; error 325
-stopped startup before repeats 2/3 or live predictions. The LED became red and
-the fatal handler attempted a blank `--` redraw. This is not successful live
-hardware acceptance or evidence of three-repeat allocator stability.
-
-The discrepancy is approximately **three final output quantization steps**.
-That is consistent with quantized execution differences, but grid-aligned
-outputs alone do not prove the cause. The earlier claim that it definitively
-proved harmless rounding was too strong.
-
-The user explicitly approved revision 2 **after observing that failure**:
-
-- seven finite output logits;
-- max absolute error **≤8 × output scale = 1.4855130910873413**;
-- cosine **≥0.999**;
-- identical top-1 **and** identical displayed decision at the unchanged **0.80**
-  recognition threshold, including letter versus `--`;
-- all previous three-repeat, unchanged-input, IRQ/job completion and no method/
-  temporary high-water growth checks remain.
-
-This is an **engineering tolerance changed post-hoc**, weaker evidence than a
-pre-registered test. Eight steps is an approved trial bound, not an independently
-established guarantee of acceptable numerical error. No further widening is
-authorized. Firmware prints `ASL GATE revision=2 ... post_hoc=1` and each repeat's
-`output_steps`. The generated header and both export manifests bind the policy
-to the actual output scale; the observer rejects missing/stale policies and
-independently checks all three logged seven-logit comparisons and allocator
-high-water stability. C++ and Python tests cover exact/3/8/9-step cases, wrong
-top-1, changed display decision, cosine failure and invalid scales.
-
-The boot test still uses the exact exported training input, never a device-
-generated golden result. Self-test predictions are never used as live
-observations. Live startup stays blocked on any failed check. **Revision 2 has
-not been run on hardware yet**; passing it will not validate camera recognition
-accuracy, which remains weak and unchanged.
-
-On boot self-test failure v6 attempts **SELFTEST / FAIL / numeric error code**
-in the upright panel, retaining the EXPERIMENTAL footer. On other fatal camera/
-runtime errors the code attempts a `--` redraw using only a
-known-inactive LCD buffer. After an ambiguous/failed display flip it touches
-neither buffer: failed display hardware or a stopped CPU cannot be guaranteed
-to blank itself. The 1,000 ms stale limit is enforced on application updates,
-not by an independent hardware watchdog. A very slow pipeline may therefore
-show no stable letters; measure rather than weaken the policy.
-
-This live image intentionally has **no boot frame export**, to avoid freezing a
-live letter during a several-second transfer. `tools.capture_camera` is for the
-preserved capture/UI packages, not this image. UART `latency_ms` measures
-preprocessing plus model execution, not total camera-to-LCD latency.
-
-## Deliberate installation and acceptance
-
-Current package pointer: `.work/inference/asl-live-programming-v1/latest.json`.
-Stage: `camera-inference-hhatrmoz` (v6/revision 2). The earlier v5 stage
-`camera-inference-8k36dt9v`, its writer receipt and boot01 log remain historical
-evidence; the writer selects only the new stage. Target:
-`asl-live-experimental.debug+DevKit-E8-HP`; image:
-`handgpt-asl-live-experimental.bin`. HP application plus the same DEVICE/
-certificates/ATOC tail `[0x8057f0d0, 0x80580000)` (**3,888 bytes**), DEVICE +
-USER_APP, **M55_HP only**. Stage is 0700 and preparation logs are 0600; do not
-publish private SETOOLS files or logs containing signing material.
-
-Read-only offline package revalidation:
-
-```bash
+python3 -B -m tools.prepare_asl_live prepare --setools-root <installed-SETOOLS> \
+  --export .work/asl/static-export-v1 --experimental --hp-only-board
 python3 -B -m tools.program_asl_live review
 ```
 
-To install yourself:
+### Training and validation
 
-1. Close serial listeners. **Power off before changing SW4 to SE**, then reconnect.
-2. Confirm the intended board/port, then run in an interactive terminal:
+- Inventory all 75,000 allowed images, decode/hash each, split filename blocks
+  together and quarantine near-duplicate evaluation images. Filename blocks
+  are **not verified signer/session identities**; dHash is heuristic.
+- Defaults: 600 Kaggle training images/class plus an augmented view; up to 100
+  evaluation images/class. All 61 reviewed camera TRAIN images plus three mild
+  augmented views; no horizontal flips. Existing camera audit is unchanged.
+- Copy preserved classifier rows **by name**, initialize new rows, freeze
+  MobileNetV2 backbone and BatchNorm. Fit the head only, class-balanced within
+  each domain, 50% camera / 50% Kaggle sampling mass.
+- Select on mean class-balanced camera/Kaggle development-validation loss.
+  Keep domain/per-class metrics separate. Dataset test is evaluated once after
+  selection; no untouched final camera test is evaluated.
+- Two development mixes were compared. The selected v2 mix uses 25% camera
+  sampling and 16,384 samples/epoch, rather than v1's 50% / 8,192. Both use 40
+  epochs; best epoch is selected on development loss, not the dataset test.
+- TRAIN-only PT2E calibration: every camera training image plus ten selected
+  Kaggle training images/class. Require all 26 classes represented. Compare
+  float and PT2E separately on camera and Kaggle development data. Failed
+  nonregression gates stay recorded, not silently excused.
+
+### Contract and firmware safeguards
+
+- `tools/asl_contract.py` owns exact legacy-7 and static-26 orders. Generated
+  and checked-in C++ headers, reference, PTE inspector, UART banner and observer
+  must agree. Wrong order/count fails closed.
+- Keep all measured backing allocations: 1,000 outputs and 224x224 inputs,
+  zero-padded reference assets; use only 26 logits / 128x128 inputs. No arena,
+  method, temporary, camera or LCD reservation is reduced.
+- Three boot repeats: finite logits, unchanged input, IRQ/job completion,
+  stable allocator high-water marks, identical top-1 and 0.80 display decision,
+  cosine >=0.999 and max error <=8 times the **new output scale**, extracted
+  from graph and PTE. This retains the previously approved **post-hoc** gate;
+  it is not a pre-registered accuracy result and is not widened again.
+- Keep MRAM GOT, interrupt-driven NPU IRQ 366, CPU RGB565 rendering, whole-LCD
+  180-degree rotation and **unrotated** camera/ML input. No live boot frame export.
+- Threshold **0.80**, uncalibrated. Require three consecutive matching
+  predictions; clear on a different/negative observation or 1,000ms staleness.
+  NO_HAND/OTHER/uncertainty -> `--`. Clean letter panel without a footer; no cycling.
+- Boot failure attempts `SELFTEST FAIL <code>` in a known-inactive LCD buffer.
+  An ambiguous display flip cannot safely be redrawn. Startup stays blocked.
+
+## Deliberate install and acceptance
+
+Only flash after package review. Training/build/preparation/review/observer never
+write hardware. HP-only board; preserve private SETOOLS material under `.work/`.
+
+1. Power off, SW4 -> SE, reconnect:
 
    ```bash
    python3 -B -m tools.program_asl_live program --port /dev/ttyACM0 --write
    ```
 
-   Review the experimental warning and type exactly:
-   **`PROGRAM E8-HP EXPERIMENTAL LIVE ASL`**. Without `--write` it only reviews.
-   No automatic flash, retry, full erase or provisioning occurs.
-3. After writer success, **power off before SW4 → U4**, then reconnect.
-4. Capture a full boot log using the new read-only observer (not the v4 capture
-   tool). It sends nothing; press RESET **once after it says READ ONLY**:
+   Type exactly `PROGRAM E8-HP EXPERIMENTAL LIVE ASL`. After writer success,
+   power off, SW4 -> U4, reconnect.
+
+2. Arm the read-only observer, then RESET once:
 
    ```bash
    .work/asl/venv/bin/python -B -m tools.observe_asl_live \
-      --port /dev/ttyACM0 --seconds 20 --export .work/asl/export-v5 \
-      --output .work/inference/asl-live-acceptance/boot02.log
+     --port /dev/ttyACM0 --seconds 30 --export .work/asl/static-export-v1 \
+     --output .work/inference/asl-live-acceptance/static-boot01.log
    ```
 
-   Keep boot01 unchanged; choose a fresh log name each time. Require gate
-   revision 2 and all three seven-logit comparisons,
-   `ASL SELFTEST PASS`, then `LIVE ASL START`, and increasing frames/predictions
-   with `fault=0`, IRQs and matched started/finished jobs. The observer checks
-   model/reference identities, numerical self-test and progress; it does **not**
-   certify gesture accuracy or a cold boot. Share the log on any failure.
-5. Observe upright **ASL / EXPERIMENTAL**, moving preview, and pose-dependent
-   letters rather than cycling. Try A/B/C/L/Y with controlled placement, then
-   release the hand and try unsupported poses. Record mistakes/suppressions;
-   do not lower 0.80 merely to force letters. Repeat from a full cold power-on.
+   Fresh log name each time. Require exact model/input/class/gate identity,
+   78 ordered logit records (26 per repeat), `ASL SELFTEST PASS checked=26
+   repeats=3`, `LIVE ASL START`, and increasing frames/predictions with `fault=0`.
+   Keep failure logs; never widen limits to force a pass.
 
-The preserved `tools.program_camera_overlay` and `tools.program_camera_inference`
-select the original upright TEST UI and v4 capture packages, respectively, with
-their own confirmation phrases. They remain fallbacks, not live recognition.
+3. Check upright preview/panel. Sign A/N/G/E/L/A separately, then the other
+   letters, empty scene and unsupported poses. Record errors and suppressions;
+   don't quietly disable weak classes. No word completion or ANGELA shortcut.
+4. Repeat from cold power-on. Passing numerical self-test is not gesture
+   accuracy. New-letter camera training/validation and an untouched final
+   session remain future work.
+
+Results and build identity: [static alphabet audit](../../docs/asl-static-alphabet.md).
+The v7 image is built and packaged: **3,480,640 bytes**, **381 host tests pass**,
+offline package/layout/ABI/embedded-byte checks pass. Nothing was flashed.
+**Both quantization nonregression gates failed**: camera development PT2E gives
+11/30 correct letter displays, two wrong, 0/12 negative false letters; A 0/6.
+No static-26 hardware run or new-letter camera accuracy is claimed. This is an
+expanded-alphabet trial, not a demonstrated accuracy improvement over v6.

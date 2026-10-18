@@ -2,6 +2,7 @@
 
 import math
 import struct
+from tools.asl_contract import LEGACY_CLASSES, validate_classes
 
 
 def output_scale(value):
@@ -31,17 +32,19 @@ def validate_policy(manifest, reference):
     return gate
 
 
-def displayed_decision(values):
-    if len(values) != 7 or not all(math.isfinite(x) for x in values):
+def displayed_decision(values, classes=LEGACY_CLASSES):
+    classes = validate_classes(classes)
+    if len(values) != len(classes) or not all(math.isfinite(x) for x in values):
         return "--"
-    best = max(range(7), key=values.__getitem__)
+    best = max(range(len(classes)), key=values.__getitem__)
     confidence = 1 / sum(math.exp(x - values[best]) for x in values)
-    return "ABCLY"[best] if best < 5 and confidence >= 0.8 else "--"
+    return classes[best] if best < len(classes) - 2 and confidence >= 0.8 else "--"
 
 
-def compare(actual, expected, gate, log_rounding=0.0):
+def compare(actual, expected, gate, log_rounding=0.0, classes=LEGACY_CLASSES):
     """UART rounds each float to 6 decimals; caller may allow 1e-6 error only."""
-    if (len(actual) != 7 or len(expected) != 7 or
+    classes = validate_classes(classes)
+    if (len(actual) != len(classes) or len(expected) != len(classes) or
             not all(math.isfinite(x) for x in (*actual, *expected))):
         return False
     norm = sum(x*x for x in actual) * sum(x*x for x in expected)
@@ -49,5 +52,5 @@ def compare(actual, expected, gate, log_rounding=0.0):
     return (max(abs(x-y) for x, y in zip(actual, expected)) <=
             gate["max_output_steps"] * gate["output_scale"] + log_rounding and
             cosine >= gate["min_cosine"] and
-            max(range(7), key=actual.__getitem__) == max(range(7), key=expected.__getitem__) and
-            displayed_decision(actual) == displayed_decision(expected))
+            max(range(len(classes)), key=actual.__getitem__) == max(range(len(classes)), key=expected.__getitem__) and
+            displayed_decision(actual, classes) == displayed_decision(expected, classes))

@@ -8,11 +8,11 @@ namespace handgpt {
 constexpr unsigned kAslMaxOutputSteps = 8;
 constexpr double kAslMinimumCosine = 0.999;
 constexpr float kAslSelftestThreshold = 0.8f;
-// Seven-class replacement self-test only. Never change the ImageNet checker.
+// Logical ASL outputs only; never change the ImageNet checker or pool extents.
 inline bool asl_reference_matches(const float* values, const float* reference, size_t count,
                                   double output_scale, double& max_error, double& cosine) {
     max_error = cosine = 0;
-    if (!values || !reference || count != 7 || !std::isfinite(output_scale) || output_scale <= 0 ||
+    if (!values || !reference || count != kAslClassCount || !std::isfinite(output_scale) || output_scale <= 0 ||
         !std::isfinite(output_scale * kAslMaxOutputSteps)) { return false; }
     double dot = 0, norm = 0, ref_norm = 0;
     size_t best = 0, expected = 0;

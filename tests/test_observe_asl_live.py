@@ -2,12 +2,13 @@ import unittest
 
 from tools import observe_asl_live as observe
 from tools import asl_selftest
+from tools.asl_contract import LEGACY_CLASSES
 
 
 class ObserveLiveTests(unittest.TestCase):
     def fixture(self):
         gate = asl_selftest.policy(0.18568913638591766)
-        manifest = dict(pte_sha256="model-hash", selftest_gate=gate)
+        manifest = dict(pte_sha256="model-hash", selftest_gate=gate, classes=list(LEGACY_CLASSES))
         reference = dict(input_sha256="input-hash", host_logits=[3., -12., -9., -13., -4., -17., -4.], selftest_gate=gate)
         log = b"HandGPT LIVE ASL EXPERIMENTAL;\nmodel_sha256=model-hash input_sha256=input-hash\n"
         log += b"ASL GATE revision=2 output_scale=0.185689136386 max_output_steps=8 min_cosine=0.999 threshold=0.80 post_hoc=1\n"

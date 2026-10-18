@@ -28,14 +28,14 @@ def select_records(manifest, split, limit, seed):
     return chosen
 
 
-def validate_manifest(manifest):
-    if manifest.get("schema") != 1 or manifest.get("classes") != list(CLASSES):
+def validate_manifest(manifest, classes=CLASSES):
+    if manifest.get("schema") != 1 or manifest.get("classes") != list(classes):
         raise ValueError("Unsupported dataset manifest or label order")
     paths, hashes, groups = set(), {}, {}
     counts = Counter()
     for record in manifest["records"]:
         path, split, label = record["path"], record["split"], record["label"]
-        if split not in SPLITS or label not in CLASSES or path in paths:
+        if split not in SPLITS or label not in classes or path in paths:
             raise ValueError("Invalid or repeated manifest record")
         if Path(path).is_absolute() or ".." in Path(path).parts:
             raise ValueError("Dataset paths must be relative and remain inside the dataset")
@@ -45,7 +45,7 @@ def validate_manifest(manifest):
                 raise ValueError("Cross-split duplicate/group leakage")
             mapping[key] = split
         counts[split, label] += 1
-    if any(counts[s, c] == 0 for s in SPLITS for c in CLASSES):
+    if any(counts[s, c] == 0 for s in SPLITS for c in classes):
         raise ValueError("Every split must contain every class")
 
 

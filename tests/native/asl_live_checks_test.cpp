@@ -38,13 +38,10 @@ int main(int argc, char**) {
         assert(handgpt::draw_live_asl_panel(lcd, count, static_cast<handgpt::AslLetter>(letter)));
         assert(guarded.front() == 0x1234 && guarded.back() == 0x1234);
         assert(std::all_of(lcd, lcd + 480 * 480, [](uint16_t v) { return v == 0x1234; }));
-        // Every footer character must have a visible glyph, including X/P/R/M.
-        const char* footer = "EXPERIMENTAL";
-        for (unsigned i = 0; footer[i]; ++i) {
-            unsigned bits = 0;
-            for (unsigned y = 0; y < 7; ++y) { bits |= handgpt::experimental_glyph_row(footer[i], y); }
-            assert(bits);
-        }
+        // The live panel must not add any badge/footer to the ordinary ASL panel.
+        std::vector<uint16_t> expected(count, 0x1234);
+        assert(handgpt::draw_asl_panel(expected.data(), count, static_cast<handgpt::AslLetter>(letter), false));
+        assert(std::equal(lcd, lcd + count, expected.begin()));
         assert(handgpt::rotate_lcd180(lcd, count));
         assert(std::all_of(lcd + 480 * 320, lcd + count, [](uint16_t v) { return v == 0x1234; }));
     }
@@ -65,7 +62,7 @@ int main(int argc, char**) {
     for (unsigned i = 0; symbols[i]; ++i) {
         if (symbols[i] == ' ') { continue; }
         unsigned bits = 0;
-        for (unsigned y = 0; y < 7; ++y) { bits |= handgpt::experimental_glyph_row(symbols[i], y); }
+        for (unsigned y = 0; y < 7; ++y) { bits |= handgpt::failure_glyph_row(symbols[i], y); }
         assert(bits);
     }
     assert(!handgpt::draw_selftest_failure(nullptr, count, 325));

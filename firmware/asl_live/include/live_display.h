@@ -3,7 +3,7 @@
 #include "asl_display.h"
 
 namespace handgpt {
-inline uint8_t experimental_glyph_row(char c, unsigned y) {
+inline uint8_t failure_glyph_row(char c, unsigned y) {
     if (y >= 7) { return 0; }
     switch (c) {
     case 'F': { constexpr uint8_t r[] = {31,16,16,30,16,16,16}; return r[y]; }
@@ -26,22 +26,7 @@ inline uint8_t experimental_glyph_row(char c, unsigned y) {
 }
 
 inline bool draw_live_asl_panel(uint16_t* lcd, size_t pixels, AslLetter value) {
-    if (!draw_asl_panel(lcd, pixels, value, false)) { return false; }
-    // Visible qualification of this weak engineering model, not a TEST sequence.
-    constexpr char footer[] = "EXPERIMENTAL";
-    for (unsigned i = 0; footer[i]; ++i) {
-        for (unsigned y = 0; y < 7; ++y) {
-            for (unsigned x = 0; x < 5; ++x) {
-                if (!(experimental_glyph_row(footer[i], y) & (1u << (4 - x)))) { continue; }
-                for (unsigned dy = 0; dy < 3; ++dy) {
-                    for (unsigned dx = 0; dx < 3; ++dx) {
-                        lcd[(756 + 3 * y + dy) * 480 + 24 + 18 * i + 3 * x + dx] = 0xffe0;
-                    }
-                }
-            }
-        }
-    }
-    return true;
+    return draw_asl_panel(lcd, pixels, value, false);
 }
 
 inline void draw_failure_text(uint16_t* lcd, const char* text, unsigned x, unsigned y) {
@@ -50,7 +35,7 @@ inline void draw_failure_text(uint16_t* lcd, const char* text, unsigned x, unsig
         if (left > 460 || y > 772) { return; }
         for (unsigned row = 0; row < 7; ++row) {
             for (unsigned col = 0; col < 5; ++col) {
-                if (!(experimental_glyph_row(text[i], row) & (1u << (4 - col)))) { continue; }
+                if (!(failure_glyph_row(text[i], row) & (1u << (4 - col)))) { continue; }
                 for (unsigned dy = 0; dy < 4; ++dy) {
                     for (unsigned dx = 0; dx < 4; ++dx) {
                         lcd[(y + 4 * row + dy) * 480 + left + 4 * col + dx] = 0xf800;

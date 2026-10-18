@@ -1,5 +1,16 @@
 # Host ASL training baseline
 
+## Current static-alphabet experiment
+
+The original six/seven-class workflows below remain preserved. Separate
+`static_data`, `static_train`, and `static_export` modules support **24 static
+letters (no J/Z), NO_HAND and OTHER**. Kaggle `del` and `space` are excluded,
+not used as generic negatives. See the [current workflow](../../firmware/asl_live/README.md)
+and [audit/limitations](../../docs/asl-static-alphabet.md). The 19 new letters
+have no reviewed E8-camera examples; dataset accuracy is not camera accuracy.
+
+## Preserved original baseline
+
 Six classes in a fixed order: **A, B, C, L, Y, NO_HAND**. Kaggle's `nothing`
 folder maps to `NO_HAND`. This pipeline trains on images, not hand landmarks.
 
