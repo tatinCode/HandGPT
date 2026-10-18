@@ -1,0 +1,4 @@
+# Local inference dependencies, downloads, models, logs, and build outputs.
+/.work/
+__pycache__/
+*.py[cod]
